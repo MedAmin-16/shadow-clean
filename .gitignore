@@ -1,0 +1,14 @@
+# Secrets
+.env
+.replit
+.config/
+
+# Binaries & tools
+bin/
+tools/
+
+# Node
+node_modules/
+
+# Logs
+*.log

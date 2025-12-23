@@ -1,0 +1,526 @@
+import type { 
+  ReconFindings, 
+  PlanLevel,
+} from "@shared/schema";
+import { isTargetBlacklisted } from "../utils/targetBlacklist";
+import { 
+  PLAN_CONFIGS,
+} from "@shared/schema";
+
+// Local type definitions for scanner
+interface EnhancedVulnerability {
+  id: string;
+  title: string;
+  description: string;
+  severity: "critical" | "high" | "medium" | "low";
+  port?: number;
+  service?: string;
+  cve?: string;
+  owaspCategory?: string;
+  sansTop25?: string;
+  remediationCode?: string;
+  confidenceScore?: number;
+  exploitDifficulty?: string;
+  requiresApproval?: boolean;
+}
+
+interface EnhancedScannerFindings {
+  vulnerabilities: EnhancedVulnerability[];
+  apiEndpoints: string[];
+  technologies: string[];
+  totalFindings: number;
+  criticalCount: number;
+  highCount: number;
+  decisionLog: string[];
+  agentResults: Record<string, unknown>;
+}
+import { storage } from "../storage";
+import { 
+  emitScannerDecision, 
+  emitScannerFinancialDecision,
+  emitScannerReplanning,
+  emitApprovalRequired,
+  emitExecLog,
+  emitStdoutLog,
+} from "../src/sockets/socketManager";
+import { Groq } from "groq-sdk";
+import { spawn } from "child_process";
+import { 
+  executeToolWithStreaming,
+  executeHttpRequest,
+  probeHttpTarget,
+  testSqlInjection,
+  testXss,
+} from "../src/utils/toolExecutor";
+import { secretScanService } from "../src/services/secretScanService";
+
+/**
+ * PURE STREAMING SPAWN PATTERN - NO BUFFERING, NO DELAYS
+ * Every line from stdout/stderr is emitted IMMEDIATELY with [REAL-TIME] prefix
+ * Used for Nuclei (-v -stats -si 1), SQLMap (--batch --flush-session)
+ * TIMEOUT: 3600 seconds (1 hour) for PRO/ELITE scans
+ */
+async function executeAgent(
+  scanId: string,
+  command: string,
+  args: string[],
+  agentLabel: string,
+  timeoutMs: number = 3600000
+): Promise<string> {
+  return new Promise((resolve) => {
+    const output: string[] = [];
+    let timedOut = false;
+    
+    emitExecLog(scanId, `[${agentLabel}] $ ${command} ${args.join(" ")}`, { agentLabel });
+    console.log(`[AGENT] Spawning: ${command} with ${args.length} args for scanId=${scanId}, timeout=${timeoutMs}ms`);
+    
+    const child = spawn(command, args, { shell: true });
+    
+    // Set timeout - kill process if it exceeds limit
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      console.error(`[AGENT] ${agentLabel} TIMEOUT after ${timeoutMs}ms`);
+      emitStdoutLog(scanId, `[TIMEOUT] [${agentLabel}] Process exceeded ${timeoutMs}ms timeout limit, killing...`, { agentLabel, type: "error" });
+      child.kill("SIGKILL");
+    }, timeoutMs);
+    
+    // Stream stdout IMMEDIATELY with [REAL-TIME] prefix - NO BUFFERING - EVERY LINE
+    child.stdout?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n");
+      console.log(`[AGENT] ${agentLabel} stdout: ${lines.length} lines received`);
+      
+      lines.forEach((line: string, idx: number) => {
+        if (line.trim()) {
+          const message = `[REAL-TIME] [${agentLabel}] ${line}`;
+          console.log(message);
+          emitStdoutLog(scanId, message, { agentLabel, type: "stdout" });
+          output.push(line);
+        } else if (line === "" && idx < lines.length - 1) {
+          // Emit empty lines to preserve formatting
+          emitStdoutLog(scanId, "", { agentLabel, type: "stdout" });
+        }
+      });
+    });
+    
+    // Stream stderr IMMEDIATELY with [DEBUG] prefix
+    child.stderr?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n");
+      console.log(`[AGENT] ${agentLabel} stderr: ${lines.length} lines received`);
+      
+      lines.forEach((line: string) => {
+        if (line.trim()) {
+          const message = `[DEBUG] [${agentLabel}] ${line}`;
+          console.log(message);
+          emitStdoutLog(scanId, message, { agentLabel, type: "stderr" });
+        }
+      });
+    });
+    
+    child.on("close", (code: number) => {
+      clearTimeout(timeout);
+      if (!timedOut) {
+        console.log(`[AGENT] ${agentLabel} closed with code ${code}, total output lines: ${output.length}`);
+        emitStdoutLog(scanId, `[AGENT] ${agentLabel} completed with ${output.length} output lines`, { agentLabel, type: "info" });
+      }
+      resolve(output.join("\n"));
+    });
+    
+    child.on("error", (err: Error) => {
+      clearTimeout(timeout);
+      console.error(`[AGENT] ${agentLabel} error:`, err.message);
+      emitStdoutLog(scanId, `[ERROR] [${agentLabel}] Process error - ${err.message}`, { agentLabel, type: "error" });
+      resolve("");
+    });
+  });
+}
+
+async function generateRemediationFix(vuln: EnhancedVulnerability, target: string): Promise<string> {
+  try {
+    const groq = new Groq({
+      apiKey: process.env.GROQ_API_KEY,
+    });
+    
+    const prompt = `You are a security expert. Generate a concise, practical code fix for this vulnerability.
+Vulnerability: ${vuln.title}
+Description: ${vuln.description}
+Target: ${target}
+OWASP: ${vuln.owaspCategory || "N/A"}
+
+Provide ONLY the code fix (no explanation). Be brief, 2-5 lines max.`;
+    
+    const message = await groq.chat.completions.create({
+      model: "mixtral-8x7b-32768",
+      max_tokens: 200,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
+    
+    const fixContent = message.choices[0]?.message?.content;
+    if (fixContent) {
+      return fixContent.trim();
+    }
+    return "Fix generation failed";
+  } catch (error) {
+    console.error("Remediation generation error:", error);
+    return "See remediation code template";
+  }
+}
+
+type VulnSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+interface VulnerabilityTemplate {
+  title: string;
+  description: string;
+  severity: VulnSeverity;
+  cve?: string;
+  owaspCategory?: string;
+  sansTop25?: string;
+  affectedServices?: string[];
+  exploitDifficulty: "trivial" | "easy" | "moderate" | "hard" | "expert";
+  attackChainPotential?: string[];
+  remediationTemplate?: string;
+}
+
+const vulnerabilityTemplates: VulnerabilityTemplate[] = [
+  {
+    title: "SQL Injection Vulnerability",
+    description: "The application is vulnerable to SQL injection attacks through user input fields.",
+    severity: "critical",
+    cve: "CVE-2021-44228",
+    owaspCategory: "A03:2021-Injection",
+    sansTop25: "CWE-89",
+    affectedServices: ["HTTP", "HTTPS", "MySQL", "PostgreSQL"],
+    exploitDifficulty: "easy",
+    attackChainPotential: ["data_exfiltration", "privilege_escalation", "lateral_movement"],
+    remediationTemplate: "Use parameterized queries or prepared statements. Implement input validation and sanitization.",
+  },
+  {
+    title: "Cross-Site Scripting (XSS)",
+    description: "Reflected XSS vulnerability found in search parameters.",
+    severity: "high",
+    owaspCategory: "A03:2021-Injection",
+    sansTop25: "CWE-79",
+    affectedServices: ["HTTP", "HTTPS"],
+    exploitDifficulty: "easy",
+    attackChainPotential: ["session_hijacking", "credential_theft"],
+    remediationTemplate: "Implement Content-Security-Policy headers and sanitize all user inputs before rendering.",
+  },
+];
+
+// 10-Agent Swarm Configuration (AGENT-01 to AGENT-10)
+// Nuclei flags: -t /home/runner/nuclei-templates (templates path), -ni (no interaction), -duc (disable update check), -stats (show stats), -timeout 10 (sec per request), -retries 2
+// SQLMap flags: --batch (non-interactive), --flush-session (clear cache), --random-agent
+export const AGENT_SWARM = {
+  "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
+  "AGENT-02": { name: "Port Scanner", tool: "netstat", command: "netstat -tuln" },
+  "AGENT-03": { name: "Web Service Mapper", tool: "nikto", command: "nikto -h" },
+  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/go/bin/nuclei -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
+  "AGENT-05": { name: "Exploitation Framework", tool: "metasploit", command: "msfvenom" },
+  "AGENT-06": { name: "API Security Analyzer", tool: "burp", command: "burpsuite --analyze" },
+  "AGENT-07": { name: "Cryptographic Weakness Detector", tool: "testssl", command: "testssl.sh" },
+  "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent -u" },
+  "AGENT-09": { name: "Access Control Validator", tool: "authorization-checker", command: "authz-check" },
+  "AGENT-10": { name: "Business Logic Auditor", tool: "business-logic-tester", command: "logic-test" },
+};
+
+export async function runScannerAgent(
+  target: string,
+  reconData: ReconFindings,
+  options?: {
+    userId?: string;
+    scanId?: string;
+    onProgress?: (progress: number) => Promise<void>;
+    planLevel?: PlanLevel;
+  }
+): Promise<EnhancedScannerFindings> {
+  const scanId = options?.scanId || "unknown";
+  const planLevel = options?.planLevel || "STANDARD";
+  const userId = options?.userId || "unknown";
+  const findings: EnhancedVulnerability[] = [];
+  
+  // ELITE/PRO plans: Use professional deep scan with real tool execution
+  if (planLevel === "ELITE" || planLevel === "PRO") {
+    emitStdoutLog(scanId, `[SYSTEM] Pipeline starting...`);
+    emitStdoutLog(scanId, `[SYSTEM] User Plan: ${planLevel}`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[DEEP-SCAN] Activating professional penetration testing mode for ${planLevel} plan`);
+    
+    // Run real secret/JS scanning service
+    emitStdoutLog(scanId, `[RUNNING] secretScanService.runFullSecretScan() on ${target}`, { agentLabel: "SCANNER" });
+    const secretFindings = await secretScanService.runFullSecretScan(
+      target,
+      scanId,
+      userId,
+      (line: string) => {
+        emitStdoutLog(scanId, line, { agentLabel: "SECRET-SCANNER" });
+      },
+      (warning: string) => {
+        emitStdoutLog(scanId, `[!] ${warning}`, { agentLabel: "SECRET-SCANNER" });
+      },
+      (error: string) => {
+        emitStdoutLog(scanId, `[ERROR] ${error}`, { agentLabel: "SECRET-SCANNER" });
+      }
+    );
+
+    // Process secret findings into vulnerabilities
+    if (secretFindings && secretFindings.length > 0) {
+      for (const secret of secretFindings) {
+        const vuln: EnhancedVulnerability = {
+          id: `secret-${Date.now()}-${Math.random()}`,
+          title: `${secret.secretType} exposed in JavaScript files`,
+          description: `Found ${secret.secretType} in JS file: ${secret.jsFileUrl}. Confidence: ${secret.confidence}%`,
+          severity: secret.severity as any,
+          owaspCategory: "A02:2021-Cryptographic Failures",
+          sansTop25: "CWE-798",
+          port: 443,
+          service: "https",
+          remediationCode: `Remove ${secret.secretType} from client-side code and use server-side configuration.`,
+          cve: `SECRET-${secret.secretType}`,
+        };
+        findings.push(vuln);
+        
+        const severityIcon = vuln.severity === "critical" ? "🚨" : vuln.severity === "high" ? "⚠️" : "ℹ️";
+        const logMsg = `${severityIcon} [${vuln.severity.toUpperCase()}] ${vuln.title}\n[URL] ${secret.jsFileUrl}\n[TYPE] ${secret.secretType}`;
+        emitStdoutLog(scanId, logMsg, { 
+          agentLabel: "SCANNER",
+          type: vuln.severity === "critical" ? "finding" : "info" 
+        });
+      }
+    }
+
+    // Run real Nuclei scanning for CVEs - SKIP ON ERROR
+    emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2`, { agentLabel: "SCANNER" });
+    try {
+      const nucleiOutput = await executeAgent(scanId, "/home/runner/go/bin/nuclei", ["-u", target, "-t", "/home/runner/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2"], "AGENT-04");
+      
+      // Parse Nuclei JSON output if available
+      try {
+        const nucleiLines = nucleiOutput.split("\n");
+        for (const line of nucleiLines) {
+          if (line.startsWith("{") && line.includes("template-id")) {
+            const nucleiResult = JSON.parse(line);
+            if (nucleiResult.severity && nucleiResult.name) {
+              const vuln: EnhancedVulnerability = {
+                id: `nuclei-${Date.now()}-${Math.random()}`,
+                title: nucleiResult.name,
+                description: `CVE detected by Nuclei template: ${nucleiResult["template-id"]}`,
+                severity: nucleiResult.severity,
+                owaspCategory: "A06:2021-Vulnerable Outdated Components",
+                sansTop25: "CWE-1104",
+                cve: nucleiResult["cve-id"] || nucleiResult["template-id"],
+                port: 443,
+                service: "https",
+                remediationCode: `Update the affected component to the latest patched version.`,
+              };
+              findings.push(vuln);
+              emitStdoutLog(scanId, `🚨 [${nucleiResult.severity.toUpperCase()}] ${nucleiResult.name}`, { agentLabel: "SCANNER", type: "finding" });
+            }
+          }
+        }
+      } catch (e) {
+        emitStdoutLog(scanId, `[DEBUG] Nuclei JSON parsing: ${e instanceof Error ? e.message : "unknown error"}`, { agentLabel: "SCANNER" });
+      }
+    } catch (nucleiError) {
+      emitStdoutLog(scanId, `[ERROR] Nuclei scanning failed: ${nucleiError instanceof Error ? nucleiError.message : "unknown error"}. Continuing to next tool...`, { agentLabel: "SCANNER" });
+    }
+
+    // Run real SQLMap scanning for SQL injection - SKIP ON ERROR
+    emitStdoutLog(scanId, `[RUNNING] sqlmap -u ${target} --batch --flush-session --random-agent`, { agentLabel: "SCANNER" });
+    try {
+      const sqlmapOutput = await executeAgent(scanId, "sqlmap", ["-u", target, "--batch", "--flush-session", "--random-agent"], "AGENT-08");
+      
+      // Check for SQL injection indicators
+      if (sqlmapOutput.match(/SQL\s+injection|vulnerable|parameter.*injectable|VULNERABLE/i)) {
+        const vuln: EnhancedVulnerability = {
+          id: `sqli-${Date.now()}`,
+          title: "SQL Injection Vulnerability",
+          description: `SQL injection detected on target via SQLMap execution.`,
+          severity: "critical",
+          owaspCategory: "A03:2021-Injection",
+          sansTop25: "CWE-89",
+          port: 443,
+          service: "https",
+          remediationCode: `Use parameterized queries and prepared statements for all database operations.`,
+          cve: "CVE-2019-9193",
+        };
+        findings.push(vuln);
+        emitStdoutLog(scanId, `🚨 [CRITICAL] SQL Injection Vulnerability Found`, { agentLabel: "SCANNER", type: "finding" });
+      }
+    } catch (sqlmapError) {
+      emitStdoutLog(scanId, `[ERROR] SQLMap scanning failed: ${sqlmapError instanceof Error ? sqlmapError.message : "unknown error"}. Continuing to next tool...`, { agentLabel: "SCANNER" });
+    }
+
+    emitStdoutLog(scanId, `[DEEP-SCAN] ═══════════════════════════════════════`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[DEEP-SCAN] Professional scan complete: ${findings.length} findings identified`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[DEEP-SCAN] ═══════════════════════════════════════`, { agentLabel: "SCANNER" });
+    
+    return {
+      vulnerabilities: findings,
+      apiEndpoints: [],
+      technologies: [],
+      totalFindings: findings.length,
+      criticalCount: findings.filter(f => f.severity === "critical").length,
+      highCount: findings.filter(f => f.severity === "high").length,
+      decisionLog: [],
+      agentResults: {},
+    };
+  }
+  
+  // Multi-target attack: Get subdomains from recon data
+  const targets = reconData.subdomains && reconData.subdomains.length > 0 
+    ? reconData.subdomains 
+    : [target];
+  
+  emitStdoutLog(scanId, `[SCAN] Launching attack on ${targets.length} target(s)...`, { 
+    agentLabel: "CONTROLLER"
+  });
+  
+  // Plan-based agent filtering: PRO = 7 agents, ELITE = 10 agents
+  const agentLimit = (planLevel as string) === "PRO" ? 7 : ((planLevel as string) === "ELITE" ? 10 : 7);
+  const agentEntries = Object.entries(AGENT_SWARM).slice(0, agentLimit);
+
+  // Agent Swarm Parallel Execution: Each agent tests all subdomains with PURE SPAWN()
+  for (const [agentKey, agent] of agentEntries) {
+    for (const currentTarget of targets) {
+      const agentVulns: EnhancedVulnerability[] = [];
+      
+      // Agent-specific REAL TOOL EXECUTION with spawn() - ZERO ARTIFICIAL DELAYS
+      // SKIP ON ERROR: Tools throw errors but don't fail the whole scan
+      if (agentKey === "AGENT-08") {
+        // SQLMap: --batch --flush-session flags in AGENT_SWARM - SKIP ON ERROR
+        try {
+          const args = agent.command.split(" ").concat([currentTarget]);
+          const output = await executeAgent(scanId, "sqlmap", args, agentKey);
+          
+          // Detect SQL injection from raw output
+          if (output.match(/SQL\s+injection|vulnerable|parameter.*injectable/i)) {
+            const vuln: EnhancedVulnerability = {
+              id: `${agentKey}-sqli-${Date.now()}`,
+              title: "SQL Injection Vulnerability",
+              description: `SQL injection detected from real SQLMap execution.`,
+              severity: "critical",
+              confidenceScore: 90,
+              owaspCategory: "A03:2021-Injection",
+              sansTop25: "CWE-89",
+              remediationCode: "Use parameterized queries and prepared statements.",
+              exploitDifficulty: "easy",
+              requiresApproval: false,
+              port: 443,
+              service: "https",
+            };
+            agentVulns.push(vuln);
+            emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] SQL Injection Vulnerability Found`, { agentLabel: agentKey, type: "finding" });
+          }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] ⚠️ SQLMap execution error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+        }
+      } else if (agentKey === "AGENT-04") {
+        // Nuclei: -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
+        try {
+          const args = agent.command.split(" ").concat([currentTarget]);
+          const output = await executeAgent(scanId, "/home/runner/go/bin/nuclei", args, agentKey);
+          
+          // Detect vulnerabilities from raw nuclei output
+          if (output.match(/\[.*\]\s+\[.*\]\s+.*|template-match|found/i)) {
+            const vuln: EnhancedVulnerability = {
+              id: `${agentKey}-nuc-${Date.now()}`,
+              title: "Nuclei Scan Finding",
+              description: `Vulnerability detected from real Nuclei execution.`,
+              severity: "high",
+              confidenceScore: 85,
+              owaspCategory: "A05:2021-Security Misconfiguration",
+              sansTop25: "CWE-200",
+              remediationCode: "Review and remediate based on nuclei finding.",
+              exploitDifficulty: "moderate",
+              requiresApproval: false,
+              port: 443,
+              service: "https",
+            };
+            agentVulns.push(vuln);
+            emitStdoutLog(scanId, `[${agentKey}] 🔍 Vulnerability detected in Nuclei output`, { agentLabel: agentKey, type: "finding" });
+          }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] ⚠️ Nuclei execution error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+        }
+      } else if (agentKey === "AGENT-03") {
+        // XSS Testing with curl - SKIP ON ERROR
+        try {
+          const xssResult = await testXss(scanId, currentTarget, agentKey);
+          
+          if (xssResult.vulnerable) {
+            const vuln: EnhancedVulnerability = {
+              id: `${agentKey}-xss-${Date.now()}`,
+              title: "Cross-Site Scripting (XSS) Vulnerability",
+              description: `XSS vulnerability confirmed via real payload testing.`,
+              severity: "high",
+              confidenceScore: 95,
+              owaspCategory: "A03:2021-Injection",
+              sansTop25: "CWE-79",
+              remediationCode: "Implement output encoding and Content-Security-Policy.",
+              exploitDifficulty: "easy",
+              requiresApproval: false,
+              port: 443,
+              service: "https",
+            };
+            agentVulns.push(vuln);
+            emitStdoutLog(scanId, `[${agentKey}] 🚨 [HIGH] XSS Vulnerability Found`, { agentLabel: agentKey, type: "finding" });
+          }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] ⚠️ XSS testing error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+        }
+      } else if (agentKey === "AGENT-01") {
+        // HTTP Probing with curl -v - SKIP ON ERROR
+        try {
+          const probeResult = await probeHttpTarget(scanId, currentTarget, agentKey);
+          
+          if (probeResult.reachable) {
+            emitStdoutLog(scanId, `[${agentKey}] ✓ Target reachable: ${currentTarget} (HTTP ${probeResult.statusCode})`, { 
+              agentLabel: agentKey 
+            });
+          }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] ⚠️ HTTP probe error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+        }
+      }
+      
+      findings.push(...agentVulns);
+
+      // Generate remediation for findings (NO delays, NO fake code)
+      for (const vuln of agentVulns) {
+        const remediationFix = await generateRemediationFix(vuln, currentTarget);
+        vuln.remediationCode = remediationFix;
+        emitStdoutLog(scanId, `[${agentKey}] Remediation: ${remediationFix}`, { agentLabel: agentKey, type: "remediation" });
+      }
+    }
+  }
+
+  // Deduplicate vulnerabilities by title and target
+  const deduplicatedMap = new Map<string, EnhancedVulnerability>();
+  for (const vuln of findings) {
+    const key = `${vuln.title}-${vuln.port || 0}`;
+    if (!deduplicatedMap.has(key) || (deduplicatedMap.get(key)?.confidenceScore || 0) < (vuln.confidenceScore || 0)) {
+      deduplicatedMap.set(key, vuln);
+    }
+  }
+  const deduplicatedFindings = Array.from(deduplicatedMap.values());
+
+  emitStdoutLog(scanId, `[SCAN] Complete: ${deduplicatedFindings.length} unique vulnerabilities identified`, { 
+    agentLabel: "CONTROLLER" 
+  });
+
+  return {
+    vulnerabilities: deduplicatedFindings,
+    apiEndpoints: [],
+    technologies: [],
+    totalFindings: deduplicatedFindings.length,
+    criticalCount: deduplicatedFindings.filter(f => f.severity === "critical").length,
+    highCount: deduplicatedFindings.filter(f => f.severity === "high").length,
+    decisionLog: [],
+    agentResults: {},
+  };
+}

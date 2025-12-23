@@ -1,0 +1,421 @@
+{
+  "reportId": "dce44df1-5215-4bc1-ad5b-9d137bedda60",
+  "generatedAt": "2025-12-17T18:07:42.113Z",
+  "planLevel": "ELITE",
+  "llmModelUsed": "gpt-5.1",
+  "summary": {
+    "securityScore": 2,
+    "totalVulnerabilities": 4,
+    "criticalCount": 2,
+    "highCount": 0,
+    "mediumCount": 1,
+    "lowCount": 0
+  },
+  "financialRisk": {
+    "totalEstimatedRiskMin": 390000,
+    "totalEstimatedRiskMax": 1050000,
+    "annualizedRiskExposure": 523751,
+    "assessments": [
+      {
+        "vulnerabilityId": "VULN-1765994852016-1",
+        "vulnerabilityTitle": "SQL Injection Vulnerability",
+        "severity": "critical",
+        "estimatedLossMin": 187500,
+        "estimatedLossMax": 500000,
+        "estimatedLossRange": "$188K - $500K",
+        "downtimeProbability": 0.75,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 257813,
+        "riskCategory": "data_breach",
+        "businessImpactDescription": "Potential exposure of sensitive customer data leading to regulatory fines and loss of customer trust"
+      },
+      {
+        "vulnerabilityId": "VULN-1765994852018-2",
+        "vulnerabilityTitle": "Default MySQL Credentials",
+        "severity": "critical",
+        "estimatedLossMin": 187500,
+        "estimatedLossMax": 500000,
+        "estimatedLossRange": "$188K - $500K",
+        "downtimeProbability": 0.75,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 257813,
+        "riskCategory": "data_breach",
+        "businessImpactDescription": "Potential exposure of sensitive customer data leading to regulatory fines and loss of customer trust"
+      },
+      {
+        "vulnerabilityId": "VULN-1765994852015-0",
+        "vulnerabilityTitle": "SSL/TLS Configuration Weakness",
+        "severity": "medium",
+        "estimatedLossMin": 15000,
+        "estimatedLossMax": 50000,
+        "estimatedLossRange": "$15K - $50K",
+        "downtimeProbability": 0.25,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 8125,
+        "riskCategory": "regulatory_fine",
+        "businessImpactDescription": "Non-compliance with security standards may result in regulatory penalties"
+      }
+    ]
+  },
+  "industryBenchmark": {
+    "industryName": "Technology Sector",
+    "averageSecurityScore": 72,
+    "companyPercentile": 2,
+    "medianVulnerabilityCount": 8,
+    "topPerformerScore": 95,
+    "averageTimeToRemediate": "14 days",
+    "complianceStandards": [
+      "SOC 2 Type II",
+      "ISO 27001",
+      "PCI DSS",
+      "GDPR"
+    ],
+    "commonWeaknesses": [
+      "Insufficient access controls",
+      "Outdated dependencies",
+      "Missing security headers",
+      "Weak encryption practices"
+    ],
+    "bestPractices": [
+      "Implement zero-trust architecture",
+      "Regular penetration testing",
+      "Automated vulnerability scanning in CI/CD",
+      "Security awareness training programs",
+      "Incident response plan development"
+    ]
+  },
+  "recommendations": [
+    "URGENT: Address all critical vulnerabilities immediately. These pose immediate risk of compromise.",
+    "Update SSL/TLS configuration to disable weak cipher suites and protocols.",
+    "Implement parameterized queries and input validation to prevent SQL injection attacks.",
+    "Conduct thorough incident response as unauthorized access was demonstrated.",
+    "Review and renew SSL certificates, ensure proper chain configuration.",
+    "Implement regular security scanning as part of CI/CD pipeline.",
+    "Conduct security awareness training for development team."
+  ],
+  "exploitationEvidence": [
+    {
+      "vulnerabilityId": "vuln-1",
+      "exploitTechnique": "SSL/TLS Downgrade Attack",
+      "success": false,
+      "timestamp": "2025-12-17T18:07:40.200Z"
+    },
+    {
+      "vulnerabilityId": "vuln-2",
+      "exploitTechnique": "SQL Injection Payload Injection",
+      "success": true,
+      "logSnippet": "Successfully extracted database schema",
+      "timestamp": "2025-12-17T18:07:40.200Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-3",
+      "exploitTechnique": "MySQL Credential Attack",
+      "success": true,
+      "logSnippet": "Extracted sensitive data from production database",
+      "timestamp": "2025-12-17T18:07:40.200Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-4",
+      "exploitTechnique": "Generic Exploit Attempt",
+      "success": false,
+      "timestamp": "2025-12-17T18:07:40.200Z"
+    }
+  ],
+  "remediationSnippets": [
+    {
+      "vulnerabilityId": "VULN-1765994852016-1",
+      "vulnerabilityTitle": "SQL Injection Vulnerability",
+      "language": "text",
+      "codeSnippet": "Use parameterized queries or prepared statements. Implement input validation and sanitization.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 1
+    },
+    {
+      "vulnerabilityId": "VULN-1765994852018-2",
+      "vulnerabilityTitle": "Default MySQL Credentials",
+      "language": "text",
+      "codeSnippet": "Change default credentials immediately. Implement strong password policy.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 1
+    },
+    {
+      "vulnerabilityId": "VULN-1765994852015-0",
+      "vulnerabilityTitle": "SSL/TLS Configuration Weakness",
+      "language": "nginx",
+      "codeSnippet": "ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;\nssl_prefer_server_ciphers off;",
+      "implementation": "Update SSL/TLS configuration to use only modern protocols and cipher suites.",
+      "estimatedEffort": "1-2 hours",
+      "priority": 3
+    },
+    {
+      "vulnerabilityId": "VULN-1765994852019-3",
+      "vulnerabilityTitle": "Information Disclosure via Server Banner",
+      "language": "text",
+      "codeSnippet": "# Remediation steps for: Information Disclosure via Server Banner\n1. Review the vulnerability details\n2. Apply vendor patches if available\n3. Implement compensating controls\n4. Verify fix through re-testing",
+      "implementation": "Follow vendor recommendations and security best practices for this vulnerability type.",
+      "estimatedEffort": "2-4 hours",
+      "priority": 4
+    }
+  ],
+  "securityStatusHistory": {
+    "lastFullScanDate": "2025-12-17T18:07:40.909Z",
+    "confirmedRemediations": 0,
+    "pendingRemediations": 3,
+    "emergencyScansTriggered": 0,
+    "newCvesMonitored": 2,
+    "liabilityLog": [
+      {
+        "date": "2025-12-17T18:07:40.909Z",
+        "eventType": "scan_completed",
+        "description": "Full security assessment completed",
+        "affectedAssets": [
+          "Target infrastructure with 4 findings"
+        ],
+        "remediationStatus": "pending"
+      },
+      {
+        "date": "2025-12-17T18:07:40.909Z",
+        "eventType": "vulnerability_discovered",
+        "description": "Critical vulnerability identified: SQL Injection Vulnerability",
+        "affectedAssets": [
+          "MySQL"
+        ],
+        "remediationStatus": "pending"
+      },
+      {
+        "date": "2025-12-17T18:07:40.909Z",
+        "eventType": "vulnerability_discovered",
+        "description": "Critical vulnerability identified: Default MySQL Credentials",
+        "affectedAssets": [
+          "MySQL"
+        ],
+        "remediationStatus": "pending"
+      }
+    ]
+  },
+  "rawScannerData": {
+    "vulnerabilities": [
+      {
+        "id": "VULN-1765994852015-0",
+        "severity": "medium",
+        "title": "SSL/TLS Configuration Weakness",
+        "description": "Server supports weak cipher suites that could be exploited.",
+        "port": 993,
+        "service": "IMAPS",
+        "owaspCategory": "A02:2021-Cryptographic Failures",
+        "confidenceScore": 0.7549948005526032,
+        "requiresApproval": false,
+        "exploitDifficulty": "hard"
+      },
+      {
+        "id": "VULN-1765994852016-1",
+        "severity": "critical",
+        "title": "SQL Injection Vulnerability",
+        "description": "The application is vulnerable to SQL injection attacks through user input fields.",
+        "port": 3306,
+        "service": "MySQL",
+        "cve": "CVE-2021-44228",
+        "owaspCategory": "A03:2021-Injection",
+        "sansTop25": "CWE-89",
+        "attackChain": [
+          "data_exfiltration",
+          "privilege_escalation",
+          "lateral_movement"
+        ],
+        "confidenceScore": 0.9043541745009592,
+        "requiresApproval": true,
+        "exploitDifficulty": "easy",
+        "pocCode": "# PoC: SQL Injection Test\ncurl -X POST \"https://target/api/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"admin' OR '1'='1\", \"password\": \"test\"}'",
+        "remediationCode": "Use parameterized queries or prepared statements. Implement input validation and sanitization."
+      },
+      {
+        "id": "VULN-1765994852018-2",
+        "severity": "critical",
+        "title": "Default MySQL Credentials",
+        "description": "MySQL server is accessible with default or weak credentials.",
+        "port": 3306,
+        "service": "MySQL",
+        "owaspCategory": "A07:2021-Identification and Authentication Failures",
+        "attackChain": [
+          "data_exfiltration",
+          "data_manipulation",
+          "privilege_escalation"
+        ],
+        "confidenceScore": 0.937806092162935,
+        "requiresApproval": true,
+        "exploitDifficulty": "trivial",
+        "pocCode": "# PoC for Default MySQL Credentials\n# Manual verification required",
+        "remediationCode": "Change default credentials immediately. Implement strong password policy."
+      },
+      {
+        "id": "VULN-1765994852019-3",
+        "severity": "info",
+        "title": "Information Disclosure via Server Banner",
+        "description": "Server reveals detailed version information in response headers.",
+        "port": 25,
+        "service": "SMTP",
+        "owaspCategory": "A05:2021-Security Misconfiguration",
+        "confidenceScore": 0.97708708769586,
+        "requiresApproval": false,
+        "exploitDifficulty": "trivial"
+      }
+    ],
+    "openPorts": [
+      25,
+      993,
+      3306,
+      3389
+    ],
+    "sslIssues": [
+      "Weak Diffie-Hellman parameters",
+      "Missing HSTS header"
+    ],
+    "credit_deduction_scanner": 1500,
+    "decision_log": [
+      {
+        "timestamp": "2025-12-17T18:07:30.236Z",
+        "decisionType": "financial_gate",
+        "description": "Scanner Financial Gate: Base cost 1500 credits, Plan: ELITE",
+        "creditsInvolved": 1500
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.015Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: SSL/TLS Configuration Weakness (medium)",
+        "vulnerabilityId": "VULN-1765994852015-0"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.016Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: SQL Injection Vulnerability (critical)",
+        "vulnerabilityId": "VULN-1765994852016-1"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.017Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765994852016-1: data_exfiltration -> privilege_escalation -> lateral_movement",
+        "vulnerabilityId": "VULN-1765994852016-1"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.017Z",
+        "decisionType": "poc_generated",
+        "description": "Generated PoC for VULN-1765994852016-1",
+        "vulnerabilityId": "VULN-1765994852016-1"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.017Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765994852016-1",
+        "vulnerabilityId": "VULN-1765994852016-1"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.018Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Default MySQL Credentials (critical)",
+        "vulnerabilityId": "VULN-1765994852018-2"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.018Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765994852018-2: data_exfiltration -> data_manipulation -> privilege_escalation",
+        "vulnerabilityId": "VULN-1765994852018-2"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.018Z",
+        "decisionType": "poc_generated",
+        "description": "Generated PoC for VULN-1765994852018-2",
+        "vulnerabilityId": "VULN-1765994852018-2"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.018Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765994852018-2",
+        "vulnerabilityId": "VULN-1765994852018-2"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:32.019Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Information Disclosure via Server Banner (info)",
+        "vulnerabilityId": "VULN-1765994852019-3"
+      },
+      {
+        "timestamp": "2025-12-17T18:07:33.317Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for SQL Injection Vulnerability - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765994852016-1",
+        "metadata": {
+          "approvalRequestId": "45d82aa5-e059-4c70-968f-49a957b7dd31"
+        }
+      },
+      {
+        "timestamp": "2025-12-17T18:07:33.318Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for Default MySQL Credentials - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765994852018-2",
+        "metadata": {
+          "approvalRequestId": "8859ee85-07d5-414f-ac60-69722260e9b7"
+        }
+      }
+    ],
+    "llm_model_used": "gpt-5",
+    "plan_level": "ELITE",
+    "remaining_credits": 7495,
+    "scan_type": "active",
+    "waf_ids_detected": false,
+    "replanning_occurred": false,
+    "replanning_cost": 0,
+    "self_regulation_stops": 0,
+    "attack_chains_found": 2,
+    "pocs_generated": 2,
+    "remediations_generated": 2,
+    "pending_approvals": [
+      "45d82aa5-e059-4c70-968f-49a957b7dd31",
+      "8859ee85-07d5-414f-ac60-69722260e9b7"
+    ],
+    "scan_summary": {
+      "total_tests_run": 128,
+      "critical_count": 2,
+      "high_count": 0,
+      "medium_count": 1,
+      "low_count": 0,
+      "info_count": 1,
+      "security_score": 41
+    }
+  },
+  "rawExploiterData": {
+    "exploitAttempts": [
+      {
+        "vulnerability": "SSL/TLS Configuration Weakness",
+        "success": false,
+        "technique": "SSL/TLS Downgrade Attack"
+      },
+      {
+        "vulnerability": "SQL Injection Vulnerability",
+        "success": true,
+        "technique": "SQL Injection Payload Injection",
+        "evidence": "Successfully extracted database schema"
+      },
+      {
+        "vulnerability": "Default MySQL Credentials",
+        "success": true,
+        "technique": "MySQL Credential Attack",
+        "evidence": "Extracted sensitive data from production database"
+      },
+      {
+        "vulnerability": "Information Disclosure via Server Banner",
+        "success": false,
+        "technique": "Generic Exploit Attempt"
+      }
+    ],
+    "accessGained": true,
+    "riskLevel": "critical"
+  }
+}

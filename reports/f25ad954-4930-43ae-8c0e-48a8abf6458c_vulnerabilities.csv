@@ -1,0 +1,6 @@
+ID,Title,Severity,Description,CVE,Port,Service
+"VULN-1766067986330-0","SQL Injection Vulnerability","critical","The application is vulnerable to SQL injection attacks through user input fields.","CVE-2021-44228","5432","PostgreSQL"
+"VULN-1766067986332-1","SMB Signing Not Required","medium","SMB server does not require message signing, vulnerable to relay attacks.","CVE-2020-0796","445","SMB"
+"VULN-1766067986332-2","SSL/TLS Configuration Weakness","medium","Server supports weak cipher suites that could be exploited.","","995","POP3S"
+"VULN-1766067986333-3","Information Disclosure via Server Banner","info","Server reveals detailed version information in response headers.","","21","FTP"
+"VULN-1766067986333-4","FTP Anonymous Login Enabled","high","FTP server allows anonymous login which could expose sensitive data.","","21","FTP"

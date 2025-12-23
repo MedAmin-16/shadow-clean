@@ -1,0 +1,18 @@
+The implementation of Agent 1 (server/agents/recon.ts) must now be finalized. This component serves as the Strategic Planning Engine and the Financial Gatekeeper. Strict adherence to the PLAN_LEVEL variable is mandatory to ensure profitability and quality of service.1. Core Implementation Requirements (Gating Logic)Implement the logic to dynamically select the LLM, assign the base cost, and define OSINT access based on the PLAN_LEVEL.PLAN_LEVELLLM ModelBase Credit Cost (Recon Phase)OSINT Access RuleELITEgpt-5-1 or equivalent1000 CreditsFull Access (100 Credits deducted per query).PROgpt-4-turbo or gemini-1.5-pro150 CreditsLimited Access (Max 3 queries, 100 Credits deducted per query).STANDARDgpt-3.5-flash0 CreditsStrictly FORBIDDEN.2. Mandatory Financial Gatekeeper CodeBefore any LLM API call is made, the code MUST perform the following financial check:TypeScript// Pseudocode for the Credit Check function
+function executeRecon(planLevel, currentCredits, targetAsset) {
+    const requiredCredits = getBaseCost(planLevel); // Retrieve cost from the table above
+    
+    if (currentCredits < requiredCredits) {
+        // CRITICAL FAILURE: ABORT MISSION TO PREVENT FINANCIAL LOSS
+        sendFailurePayload(targetAsset, "Insufficient AI Credits for execution.");
+        return; // Stop processing immediately
+    }
+    
+    // 1. DEDUCT CREDITS FIRST
+    deductCredits(requiredCredits, user_id); 
+    
+    // 2. PROCEED TO LLM CALL (Using the appropriate LLM defined by the PLAN_LEVEL)
+    const newCreditBalance = currentCredits - requiredCredits;
+    // ... rest of the planning logic ...
+}
+3. Final Output Payload (Pass to Agent 2)The successful output must be a single JSON object. Ensure the credit_deduction_recon field accurately reflects the total cost of the planning phase (Base Cost + any OSINT Queries made).Key Log Requirement: The strategic_decision_log must clearly state which LLM was used (e.g., "ELITE Agent utilizing GPT-5.1 for strategic path analysis.") to justify the high cost to the user in the UI.

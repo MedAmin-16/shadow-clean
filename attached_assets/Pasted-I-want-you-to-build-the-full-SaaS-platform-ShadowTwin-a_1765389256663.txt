@@ -1,0 +1,177 @@
+I want you to build the full SaaS platform **ShadowTwin**, an AI-powered Cybersecurity Digital Twin system.
+
+ShadowTwin will generate a full “Digital Security Twin” of any company’s assets (Web Applications, APIs, Cloud Infrastructure, Network Services) and run autonomous AI-driven security simulations, vulnerability discovery, and continuous monitoring.
+
+Build the project in a fully structured, scalable, production-ready way.
+
+===========================================
+== 1. PROJECT ARCHITECTURE (TOP LEVEL) ==
+===========================================
+
+Create the following structure:
+
+/backend
+/frontend
+/infra
+/shared
+/scripts
+/docs
+
+Use a monorepo architecture with TypeScript across all services.
+
+================================
+== 2. BACKEND REQUIREMENTS ==
+================================
+
+Stack:
+- Node.js + Express + TypeScript
+- PostgreSQL (Prisma ORM)
+- Redis (Caching + Rate Limiting)
+- JWT Auth (Access Token + Refresh Token)
+- Zod validation
+- Winston logging
+- Helmet + CORS + Rate Limits
+- Queue system (BullMQ) for scans
+- Background worker for AI-based scanning engine
+
+Backend Modules:
+
+1. **Auth Module**
+   - /auth/signup
+   - /auth/login
+   - /auth/refresh
+   - /auth/logout
+   - Password hashing (bcrypt)
+   - Email verification (placeholder)
+
+2. **Company Module**
+   - /company/create
+   - /company/update
+   - /company/members
+
+3. **Project Module**
+   - /projects/create
+   - /projects/list
+   - /projects/delete
+
+4. **Twin Engine Module**
+   - /twin/init        → creates a digital twin instance
+   - /twin/simulate    → runs attack simulations using the worker
+   - /twin/scan        → full security scan (headers, TLS, API checks, CVE checks)
+   - /twin/report      → returns a structured report
+
+Models (Prisma):
+- User
+- Company
+- Project
+- DigitalTwin
+- ScanJob
+- ScanReport
+
+Security:
+- OWASP compliance
+- Audit logs
+- API key system for external integrations
+
+Worker Tasks:
+- Reconnaissance (HTTP, DNS, TLS)
+- Basic vulnerability scanning
+- API endpoint probing
+- Placeholder AI logic for the Digital Twin intelligence
+
+================================
+== 3. FRONTEND (REACT + TS) ==
+================================
+
+React + Vite + TypeScript + Tailwind.
+
+Pages:
+- Landing Page (Public)
+- Login
+- Signup
+- Dashboard
+- Create Twin Project Form
+- Project Details page
+- Scan Results (Charts + Cards)
+- Activity Logs
+
+Components:
+- Sidebar
+- Navbar
+- Twin Status widget
+- Report viewer
+- Table components
+
+Landing Page Text:
+Project Name: **ShadowTwin**
+Tagline: “Build your Cyber Security Twin. Predict attacks before they happen.”
+Buttons:
+- “Get Started”
+- “Early Access”
+
+=====================================
+== 4. DIGITAL TWIN SCAN ENGINE ==
+=====================================
+
+Create a placeholder micro-engine that does:
+
+1. HTTP Header Analysis
+2. HTTPS / TLS Check
+3. DNS Check
+4. Basic OWASP Top-10 placeholder tests:
+   - XSS check
+   - CSRF check
+   - Rate Limit check
+   - Content Security Policy check
+   - SQL Injection placeholder check
+5. Output JSON structured report
+
+Example output:
+{
+  securityScore: 74,
+  tls: {...},
+  headers: {...},
+  vulnerabilities: [...],
+  recommendations: [...]
+}
+
+=================================
+== 5. INFRASTRUCTURE FOLDER ==
+=================================
+
+Include placeholders for:
+
+- Dockerfile (backend)
+- Dockerfile (frontend)
+- docker-compose.yaml
+- Deployment script for Docker
+- env.example
+
+=================================
+== 6. DEV SCRIPTS ==
+=================================
+
+Add scripts to auto-generate:
+- Prisma migrations
+- Seed database
+- Reset database
+- Start worker
+- Start backend
+- Start frontend
+
+=================================
+== 7. START BUILDING ==
+=================================
+
+Start by creating:
+- Full folder structure
+- Backend Express skeleton
+- Prisma schema + migrations
+- React frontend with Tailwind
+- Basic API routes
+- Queue worker for scans
+- Landing page
+- Authentication (JWT)
+- Basic scanning engine placeholder
+
+After that, continue building each module step by step.

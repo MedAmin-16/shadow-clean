@@ -1,0 +1,5 @@
+ID,Title,Severity,Description,CVE,Port,Service
+"VULN-1765994852015-0","SSL/TLS Configuration Weakness","medium","Server supports weak cipher suites that could be exploited.","","993","IMAPS"
+"VULN-1765994852016-1","SQL Injection Vulnerability","critical","The application is vulnerable to SQL injection attacks through user input fields.","CVE-2021-44228","3306","MySQL"
+"VULN-1765994852018-2","Default MySQL Credentials","critical","MySQL server is accessible with default or weak credentials.","","3306","MySQL"
+"VULN-1765994852019-3","Information Disclosure via Server Banner","info","Server reveals detailed version information in response headers.","","25","SMTP"

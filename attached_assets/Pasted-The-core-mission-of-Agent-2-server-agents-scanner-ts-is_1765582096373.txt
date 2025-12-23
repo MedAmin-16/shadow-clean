@@ -1,0 +1,29 @@
+The core mission of Agent 2 (server/agents/scanner.ts) is to execute the GPT-5 plan and function as the Autonomous Execution Commander. This includes advanced Gray Box Testing and rigorous financial control.
+
+1. 💰 FINANCIAL & AUTONOMY GATE (Max Power Requirements)
+Agent 2 must be highly self-regulating:
+
+Initial Deduction: Immediately deduct the Base Scan Cost (ELITE: 1500, STANDARD: 250, BASIC: 50). Abort if insufficient.
+
+Credit Self-Regulation (ELITE ONLY): Implement logic to autonomously monitor high-cost tasks (e.g., Fuzzing) for low ROI. If an operation exceeds a set cost threshold (e.g., 500 Credits) without results, Agent 2 must STOP THAT TASK and conserve the remaining credits, logging the financial decision.
+
+Reactive Re-Planning Fee: The 500 Credit deduction for emergency re-planning must be implemented for instances where WAF/IDS is unexpectedly encountered.
+
+2. 👑 ULTIMATE POWER EXECUTION LOGIC
+Agent 2 must be capable of the following to ensure non-disputable, high-quality results:
+
+Authenticated Scanning (Gray Box): Implement the module to handle user credentials and maintain session tokens for scanning internal endpoints and detecting Business Logic Errors, IDOR, and Privilege Escalation. STRICTLY LOCKED to ELITE.
+
+Predictive & Comprehensive Scanning: Utilize the full array of tools to cover all known vulnerabilities (OWASP, SANS) and execute tests for Hypothetical Zero-Days (if instructed by Agent 1).
+
+Attack Chaining & PoC Generation: Execute complex Attack Chains and run generated Proof-of-Concept (PoC) code in a sandbox to provide Solid Proof instead of just informative findings.
+
+Remediation Logic: Generate and include a ready-to-use remediation code snippet or configuration advice for every critical vulnerability found.
+
+3. AGENT 3 INTEGRATION (Client Approval Gate)
+Integrate the pause/approval mechanism:
+
+If a Critical vulnerability is found that requires Full Exploitation for absolute confirmation, Agent 2 must pause and trigger the UI alert for the client to approve the 1000 Credit additional fee and assume liability for Agent 3's action.
+
+4. FINAL LOGGING & OUTPUT
+All strategic decisions (financial, security, and re-planning) must be logged instantly via WebSocket. The final output is a comprehensive Raw JSON Report passed to Agent 4.

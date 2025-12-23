@@ -1,0 +1,3 @@
+ID,Title,Severity,Description,CVE,Port,Service
+"VULN-1766064701843-0","SSL/TLS Configuration Weakness","medium","Server supports weak cipher suites that could be exploited.","","8443","HTTPS Alt"
+"VULN-1766064701844-1","Information Disclosure via Server Banner","info","Server reveals detailed version information in response headers.","","25","SMTP"

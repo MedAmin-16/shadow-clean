@@ -1,0 +1,10 @@
+ID,Title,Severity,Description,CVE,Port,Service
+"VULN-1765992309209-0","SQL Injection Vulnerability","critical","The application is vulnerable to SQL injection attacks through user input fields.","CVE-2021-44228","80","HTTP"
+"VULN-1765992309211-1","Cross-Site Scripting (XSS)","high","Reflected XSS vulnerability found in search parameters.","","80","HTTP"
+"VULN-1765992309212-2","Remote Code Execution (Log4j)","critical","The application may be vulnerable to Log4Shell remote code execution.","CVE-2021-44228","80","HTTP"
+"VULN-1765992309214-3","SSL/TLS Configuration Weakness","medium","Server supports weak cipher suites that could be exploited.","","8443","HTTPS Alt"
+"VULN-1765992309214-4","Cross-Site Request Forgery (CSRF)","medium","Forms lack CSRF tokens, allowing cross-site request forgery attacks.","","80","HTTP"
+"VULN-1765992309215-5","Directory Listing Enabled","low","Web server allows directory listing which can expose sensitive files.","","80","HTTP"
+"VULN-1765992309215-6","Broken Authentication - Session Fixation","high","Session tokens are not regenerated after authentication.","","80","HTTP"
+"VULN-1765992309218-7","Server-Side Request Forgery (SSRF)","high","Application allows server-side requests to arbitrary URLs.","","80","HTTP"
+"VULN-1765992309219-8","Insecure Direct Object Reference (IDOR)","high","API endpoints expose direct references to internal objects without proper authorization checks.","","80","HTTP"
