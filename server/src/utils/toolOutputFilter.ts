@@ -1,8 +1,29 @@
 /**
  * Smart Tool Output Filter
- * Filters verbose tool output to show ONLY important findings
- * Provides formatted output: [SUCCESS] target.com [200] [Title: Home] [Tech: PHP, Nginx]
+ * Shows ALL vulnerabilities from Low to Critical with color-coded severity badges
+ * Format: [Severity Badge] [Tool] Target -> Finding Name
  */
+
+// ANSI color codes
+const ANSI = {
+  RED_BG: "\x1b[41m",
+  RED: "\x1b[31m",
+  YELLOW: "\x1b[33m",
+  GREEN: "\x1b[32m",
+  CYAN: "\x1b[36m",
+  WHITE: "\x1b[37m",
+  BOLD: "\x1b[1m",
+  RESET: "\x1b[0m",
+};
+
+// Severity icon map
+const SEVERITY_ICONS: Record<string, string> = {
+  critical: "☢️",
+  high: "🔥",
+  medium: "🟡",
+  low: "🛡️",
+  info: "ℹ️",
+};
 
 export interface FilteredOutput {
   importantLines: string[];
@@ -10,6 +31,31 @@ export interface FilteredOutput {
     findingsCount: number;
     successCount?: number;
   };
+}
+
+/**
+ * Format a severity badge with color coding
+ */
+function formatSeverityBadge(severity: string): string {
+  const lower = severity.toLowerCase();
+  const icon = SEVERITY_ICONS[lower] || "ℹ️";
+  
+  if (lower === "critical") {
+    // Red background with white text
+    return `${ANSI.RED_BG}${ANSI.WHITE}${ANSI.BOLD} [ ${icon} CRITICAL ]${ANSI.RESET}`;
+  } else if (lower === "high") {
+    // Red text with bold
+    return `${ANSI.RED}${ANSI.BOLD}[ ${icon} HIGH ]${ANSI.RESET}`;
+  } else if (lower === "medium") {
+    // Yellow text with bold
+    return `${ANSI.YELLOW}${ANSI.BOLD}[ ${icon} MEDIUM ]${ANSI.RESET}`;
+  } else if (lower === "low") {
+    // Green text with bold
+    return `${ANSI.GREEN}${ANSI.BOLD}[ ${icon} LOW ]${ANSI.RESET}`;
+  } else {
+    // Cyan for info
+    return `${ANSI.CYAN}[ ${icon} INFO ]${ANSI.RESET}`;
+  }
 }
 
 /**
@@ -42,7 +88,7 @@ export function filterHttpxOutput(output: string, agentLabel: string = "HTTPX"):
 
       const url = line.match(/(https?:\/\/[^\s\[]+)/)?.[1] || line.split(/[\[\s]/)[0];
       
-      const formattedLine = `[SUCCESS] ${url} [${statusCode}]${title !== "N/A" ? ` [Title: ${title}]` : ""}${tech ? ` [Tech: ${tech}]` : ""}`;
+      const formattedLine = `${formatSeverityBadge("INFO")} [HTTPX] ${url} [${statusCode}]${title !== "N/A" ? ` [Title: ${title}]` : ""}${tech ? ` [Tech: ${tech}]` : ""}`;
       importantLines.push(formattedLine);
       successCount++;
     }
@@ -55,9 +101,9 @@ export function filterHttpxOutput(output: string, agentLabel: string = "HTTPX"):
 }
 
 /**
- * SQLMAP/COMMIX OUTPUT FILTER
+ * SQLMAP/COMMIX OUTPUT FILTER - SHOW ALL FINDINGS
  * Input: Raw tool output
- * Output: Only target URL, vulnerability found message, PoC payload
+ * Output: All vulnerabilities with severity badges
  */
 export function filterVulnToolOutput(output: string, tool: string = "TOOL"): FilteredOutput {
   const lines = output.split("\n").filter(l => l.trim());
@@ -77,26 +123,49 @@ export function filterVulnToolOutput(output: string, tool: string = "TOOL"): Fil
     /^\[.*\]\s+$/,
   ];
 
-  lines.forEach((line, idx) => {
+  let currentTarget = "";
+  let currentSeverity = "MEDIUM";
+
+  lines.forEach((line) => {
     // Skip noise
     if (noisePatterns.some(pattern => pattern.test(line))) {
       return;
     }
 
-    // Vulnerability found
-    if (line.match(/vulnerable|injection|rce|found|detected|exploitable/i)) {
-      importantLines.push(`[FINDING] ${line.trim()}`);
+    // Extract target URL
+    if ((line.includes("http://") || line.includes("https://")) && line.length < 200) {
+      currentTarget = line.trim();
+      return;
+    }
+
+    // Determine severity and extract vulnerability info
+    if (line.match(/vulnerable|injectable/i)) {
+      currentSeverity = "CRITICAL";
+    } else if (line.match(/rce|remote code execution/i)) {
+      currentSeverity = "CRITICAL";
+    } else if (line.match(/injection|xss/i)) {
+      currentSeverity = "HIGH";
+    } else if (line.match(/weakness|issue/i)) {
+      currentSeverity = "MEDIUM";
+    } else if (line.match(/informational|info/i)) {
+      currentSeverity = "LOW";
+    }
+
+    // Log vulnerability findings
+    if (line.match(/vulnerable|injection|rce|found|detected|exploitable|weakness|issue/i)) {
+      const target = currentTarget || "unknown-target";
+      const findingName = line.replace(/\s*\(.*?\)\s*/g, "").trim();
+      importantLines.push(
+        `${formatSeverityBadge(currentSeverity)} [${tool.toUpperCase()}] ${target} -> ${findingName}`
+      );
       findingsCount++;
     }
 
-    // PoC/Payload info
-    if (line.includes("payload") && line.length < 150) {
-      importantLines.push(`[PAYLOAD] ${line.trim()}`);
-    }
-
-    // Target URL
-    if ((line.includes("http://") || line.includes("https://")) && line.length < 200) {
-      importantLines.push(`[TARGET] ${line.trim()}`);
+    // Show payloads and evidence
+    if (line.includes("payload") || line.includes("evidence") || line.match(/proof|poc/i)) {
+      if (line.length < 150) {
+        importantLines.push(`${formatSeverityBadge("INFO")} [${tool.toUpperCase()}] PoC/Payload: ${line.trim()}`);
+      }
     }
   });
 
@@ -107,9 +176,9 @@ export function filterVulnToolOutput(output: string, tool: string = "TOOL"): Fil
 }
 
 /**
- * NUCLEI OUTPUT FILTER
+ * NUCLEI OUTPUT FILTER - SHOW ALL FINDINGS WITH TEMPLATE IDs
  * Input: JSON or text nuclei output
- * Output: Only critical findings with severity
+ * Output: ALL findings (low to critical) with color-coded severity, template ID, and details
  */
 export function filterNucleiOutput(output: string): FilteredOutput {
   const lines = output.split("\n").filter(l => l.trim());
@@ -123,27 +192,30 @@ export function filterNucleiOutput(output: string): FilteredOutput {
       return;
     }
 
-    // Parse JSON findings
+    // Parse JSON findings - SHOW ALL SEVERITIES
     if (line.startsWith("{") && line.includes("\"template-id\"")) {
       try {
         const finding = JSON.parse(line);
-        const severity = finding.severity || "unknown";
-        
-        // Only show high/critical
-        if (!severity.match(/low|medium/i)) {
-          importantLines.push(
-            `[CRITICAL-${severity.toUpperCase()}] ${finding.name || "Unknown"} on ${finding.matched_at || "N/A"}`
-          );
-          findingsCount++;
-        }
+        const severity = (finding.severity || "low").toLowerCase();
+        const templateId = finding["template-id"] || "unknown";
+        const name = finding.name || "Unknown";
+        const target = finding.matched_at || finding.host || "N/A";
+
+        // Show ALL severity levels
+        importantLines.push(
+          `${formatSeverityBadge(severity)} [NUCLEI] ${target} -> ${name} [Template: ${templateId}]`
+        );
+        findingsCount++;
       } catch {
-        // Skip unparseable
+        // Skip unparseable JSON
       }
     }
 
-    // Or plain text findings
-    if (line.match(/\[critical\]|\[high\]|\[cve-/i)) {
-      importantLines.push(`[FINDING] ${line.trim()}`);
+    // Handle plain text findings
+    if (line.match(/\[critical\]|\[high\]|\[medium\]|\[low\]|\[cve-/i)) {
+      const severityMatch = line.match(/\[(critical|high|medium|low)\]/i);
+      const severity = severityMatch ? severityMatch[1] : "medium";
+      importantLines.push(`${formatSeverityBadge(severity)} [NUCLEI] ${line.trim()}`);
       findingsCount++;
     }
   });
@@ -165,13 +237,15 @@ export function filterKatanaOutput(output: string, agentLabel: string = "KATANA"
   
   // Only emit summary, not individual URLs
   const importantLines = [
-    `[PROGRESS] Katana discovered ${urls.length} URLs from crawling`
+    `${formatSeverityBadge("INFO")} [KATANA] Discovered ${urls.length} URLs from crawling`
   ];
 
   // Add sample of important URLs (those with parameters)
   const parameterizedUrls = urls.filter(url => url.includes("?") || url.includes("="));
   if (parameterizedUrls.length > 0) {
-    importantLines.push(`[IMPORTANT] Found ${parameterizedUrls.length} URLs with parameters (key targets for vulnerability testing)`);
+    importantLines.push(
+      `${formatSeverityBadge("HIGH")} [KATANA] Found ${parameterizedUrls.length} URLs with parameters (key targets for vulnerability testing)`
+    );
   }
 
   return {

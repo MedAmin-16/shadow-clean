@@ -330,15 +330,18 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
         emitStdoutLog(scanData.scanId, line, { agentLabel: "SQLMAP" });
       });
 
-      if (sqlmapOutput.toLowerCase().includes("vulnerable") || sqlmapOutput.toLowerCase().includes("injectable")) {
+      // Log all findings, even low severity ones
+      if (sqlmapOutput.toLowerCase().includes("vulnerable") || sqlmapOutput.toLowerCase().includes("injectable") || 
+          sqlmapOutput.toLowerCase().includes("found") || sqlmapOutput.toLowerCase().includes("detected")) {
+        const severity = sqlmapOutput.toLowerCase().includes("injectable") ? "critical" : "high";
         scanData.vulnerabilities.push({
           title: "SQL Injection Vulnerability",
-          severity: "critical",
+          severity: severity,
           type: "sqli",
           url: url,
           description: `SQL injection detected via SQLMap`
         });
-        logFinding("PHASE-2.5", `SQL Injection on ${url}`, "critical");
+        logFinding("PHASE-2.5", `SQL Injection on ${url}`, severity as "critical" | "high" | "medium" | "low");
       }
     }
 
@@ -389,15 +392,18 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
         emitStdoutLog(scanData.scanId, line, { agentLabel: "COMMIX" });
       });
 
-      if (commixOutput.toLowerCase().includes("vulnerable") || commixOutput.toLowerCase().includes("rce") || commixOutput.toLowerCase().includes("injection")) {
+      // Log all findings, even low severity ones
+      if (commixOutput.toLowerCase().includes("vulnerable") || commixOutput.toLowerCase().includes("rce") || 
+          commixOutput.toLowerCase().includes("injection") || commixOutput.toLowerCase().includes("found")) {
+        const severity = commixOutput.toLowerCase().includes("vulnerable") ? "critical" : "high";
         scanData.vulnerabilities.push({
           title: "Remote Code Execution (RCE) / Command Injection",
-          severity: "critical",
+          severity: severity,
           type: "rce",
           url: url,
           description: `Command injection detected via Commix`
         });
-        logFinding("PHASE-2.6", `RCE / Command Injection on ${url}`, "critical");
+        logFinding("PHASE-2.6", `RCE / Command Injection on ${url}`, severity as "critical" | "high" | "medium" | "low");
       }
     }
 
@@ -456,7 +462,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI" });
     });
 
-    // Parse Nuclei JSON output
+    // Parse Nuclei JSON output - INCLUDE ALL SEVERITY LEVELS
     let findingsCount = 0;
     nucleiOutput.split("\n").forEach(line => {
       if (line.trim().startsWith("{") && line.includes("template-id")) {
@@ -464,26 +470,24 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
           const finding = JSON.parse(line);
           const subdomain = scanData.subdomains.find(sub => finding.host?.includes(sub) || finding.matched_at?.includes(sub));
           
-          // Only log high/critical findings
-          if (finding.severity && !finding.severity.match(/low|medium/i)) {
-            scanData.vulnerabilities.push({
-              subdomain: subdomain || finding.host,
-              title: finding.name || "Unknown Nuclei Finding",
-              severity: finding.severity || "medium",
-              templateId: finding["template-id"],
-              url: finding.matched_at || "N/A",
-              type: "nuclei"
-            });
-            
-            if (subdomain) {
-              const meta = scanData.subdomainMetadata.get(subdomain);
-              if (meta) {
-                meta.vulnerabilityCount = (meta.vulnerabilityCount || 0) + 1;
-              }
+          // Log ALL findings regardless of severity (low, medium, high, critical)
+          scanData.vulnerabilities.push({
+            subdomain: subdomain || finding.host,
+            title: finding.name || "Unknown Nuclei Finding",
+            severity: finding.severity || "medium",
+            templateId: finding["template-id"],
+            url: finding.matched_at || "N/A",
+            type: "nuclei"
+          });
+          
+          if (subdomain) {
+            const meta = scanData.subdomainMetadata.get(subdomain);
+            if (meta) {
+              meta.vulnerabilityCount = (meta.vulnerabilityCount || 0) + 1;
             }
-            
-            findingsCount++;
           }
+          
+          findingsCount++;
         } catch {
           // Skip unparseable lines
         }
