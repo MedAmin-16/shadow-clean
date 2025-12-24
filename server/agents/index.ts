@@ -106,6 +106,44 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 }
 
 /**
+ * Probe domains for HTTP/HTTPS connectivity
+ */
+async function probeDomainsForLive(domains: string[], timeoutMs: number = 30000): Promise<string[]> {
+  const liveSubdomains: string[] = [];
+  
+  for (const domain of domains) {
+    try {
+      for (const protocol of ["https", "http"]) {
+        const url = `${protocol}://${domain}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs / domains.length);
+        
+        try {
+          const response = await fetch(url, {
+            method: "HEAD",
+            signal: controller.signal,
+            redirect: "follow",
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (response.ok || response.status === 301 || response.status === 302 || response.status === 403) {
+            liveSubdomains.push(url);
+            break;
+          }
+        } catch (e) {
+          clearTimeout(timeoutId);
+        }
+      }
+    } catch (e) {
+      // Domain probe failed, skip
+    }
+  }
+  
+  return liveSubdomains;
+}
+
+/**
  * Execute tool with direct binary call and capture output
  * @param timeoutMs Optional timeout in milliseconds (default: 60000)
  */
@@ -254,36 +292,33 @@ async function phase1SubdomainDiscovery(
       try { unlinkSync(rawDomainsFile); } catch (e) {}
     }
 
-    // ===== HTTPPROBE (with 2-min timeout) =====
+    // ===== HTTP PROBE (NodeJS-based, with 2-min timeout) =====
     if (allDomains.length === 0) {
-      emitWarningLog(scanId, `[PHASE 1] No domains discovered. Skipping HTTProbe.`);
+      emitWarningLog(scanId, `[PHASE 1] No domains discovered. Skipping HTTP probe.`);
       scanData.subdomains = [target]; // Fallback
     } else {
-      emitStdoutLog(scanId, `[PHASE 1] Running HTTProbe to filter live subdomains (${allDomains.length} domains)...`);
-      emitExecLog(scanId, `${TOOL_PATHS.httpprobe} -p 80,443 < domains.txt`);
+      emitStdoutLog(scanId, `[PHASE 1] Running HTTP probe to filter live subdomains (${allDomains.length} domains)...`);
+      emitExecLog(scanId, `[PROBE] Checking ${allDomains.length} domains on ports 80,443`);
       const httpprobeStart = Date.now();
 
-      const httpprobeInput = allDomains.join("\n");
-      const httpprobeResult = await executeTool(
-        TOOL_PATHS.httpprobe,
-        ["-p", "80,443"],
-        httpprobeInput,
-        PHASE1_TOOL_TIMEOUT
-      );
-      const httpprobeTime = Math.round((Date.now() - httpprobeStart) / 1000);
-      
-      const liveSubdomains = httpprobeResult.stdout
-        .split("\n")
-        .filter((line) => line.trim().length > 0);
+      try {
+        const liveSubdomains = await probeDomainsForLive(allDomains, PHASE1_TOOL_TIMEOUT);
+        const httpprobeTime = Math.round((Date.now() - httpprobeStart) / 1000);
 
-      scanData.subdomains = liveSubdomains;
-      emitStdoutLog(scanId, `[PHASE 1] ✅ HTTProbe completed in ${httpprobeTime}s - Verified: ${liveSubdomains.length} live subdomains`);
+        scanData.subdomains = liveSubdomains.length > 0 ? liveSubdomains : [target];
+        emitStdoutLog(scanId, `[PHASE 1] ✅ HTTP probe completed in ${httpprobeTime}s - Verified: ${liveSubdomains.length} live subdomains`);
 
-      if (liveSubdomains.length > 0) {
-        emitStdoutLog(scanId, `[PHASE 1] Live subdomains identified:`);
-        liveSubdomains.forEach((sub, idx) => {
-          emitStdoutLog(scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`);
-        });
+        if (liveSubdomains.length > 0) {
+          emitStdoutLog(scanId, `[PHASE 1] Live subdomains identified:`);
+          liveSubdomains.forEach((sub, idx) => {
+            emitStdoutLog(scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`);
+          });
+        } else {
+          emitWarningLog(scanId, `[PHASE 1] No live subdomains found, using target as fallback`);
+        }
+      } catch (probeError) {
+        emitWarningLog(scanId, `[PHASE 1] HTTP probe error, using all discovered domains`);
+        scanData.subdomains = allDomains;
       }
     }
 
@@ -713,17 +748,22 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
               vulnerabilities: aggregatedVulnerabilities,
               totalFindings: aggregatedVulnerabilities.length,
               decisionLog: [`Scanned ${liveSubdomains.length} subdomains`],
-            } as any;
+              criticalCount: aggregatedVulnerabilities.filter((v: any) => v.severity === "critical").length,
+              highCount: aggregatedVulnerabilities.filter((v: any) => v.severity === "high").length,
+              apiEndpoints: [],
+              technologies: [],
+              agentResults: {},
+            } as ScannerFindings;
             
-            const criticalCount = aggregatedVulnerabilities.filter((v: any) => v.severity === "critical").length;
-            const highCount = aggregatedVulnerabilities.filter((v: any) => v.severity === "high").length;
+            const criticalCount = scannerData.criticalCount;
+            const highCount = scannerData.highCount;
             
             emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
             emitStdoutLog(scanId, `✅ PHASE 2-3: VULNERABILITY ANALYSIS [100% COMPLETE]`);
             emitStdoutLog(scanId, `Analysis Summary: ${aggregatedVulnerabilities.length} total vulnerabilities | Critical: ${criticalCount} | High: ${highCount}`);
             emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
             
-            result = scannerData;
+            result = scannerData as ScannerFindings;
             break;
           
           case "exploiter":

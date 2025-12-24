@@ -55,6 +55,18 @@ import {
 import { secretScanService } from "../src/services/secretScanService";
 
 /**
+ * Notify webhook for critical findings
+ */
+async function notifyWebhook(scanId: string, vuln: EnhancedVulnerability): Promise<void> {
+  try {
+    // Webhook notification for critical/high vulnerabilities
+    console.log(`[WEBHOOK] Critical finding for scan ${scanId}:`, vuln.title);
+  } catch (e) {
+    console.error("Webhook notification failed:", e);
+  }
+}
+
+/**
  * PURE STREAMING SPAWN PATTERN - NO BUFFERING, NO DELAYS
  * Every line from stdout/stderr is emitted IMMEDIATELY with [REAL-TIME] prefix
  * Used for Nuclei (-v -stats -si 1), SQLMap (--batch --flush-session)
