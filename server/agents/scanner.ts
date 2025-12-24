@@ -395,7 +395,11 @@ export async function runScannerAgent(
     ? reconData.subdomains 
     : [target];
   
-  emitStdoutLog(scanId, `[SCAN] Launching attack on ${targets.length} target(s)...`, { 
+  emitStdoutLog(scanId, `\n${'═'.repeat(80)}`, { agentLabel: "CONTROLLER" });
+  emitStdoutLog(scanId, `[PHASE-SYSTEM] HARD BLOCK ENFORCEMENT ENABLED`, { agentLabel: "CONTROLLER" });
+  emitStdoutLog(scanId, `[PHASE-SYSTEM] Sequential execution with phase barriers (subdomains processed 1 by 1)`, { agentLabel: "CONTROLLER" });
+  emitStdoutLog(scanId, `${'═'.repeat(80)}\n`, { agentLabel: "CONTROLLER" });
+  emitStdoutLog(scanId, `[SCAN] Launching attack on ${targets.length} target(s) - SEQUENTIAL MODE...`, { 
     agentLabel: "CONTROLLER"
   });
   
@@ -403,9 +407,16 @@ export async function runScannerAgent(
   const agentLimit = (planLevel as string) === "STANDARD" ? 4 : 14; // PRO now gets all 14
   const agentEntries = Object.entries(AGENT_SWARM).slice(0, agentLimit);
 
-  // Agent Swarm Parallel Execution: Each agent tests all subdomains with PURE SPAWN()
-  for (const [agentKey, agent] of agentEntries) {
-    for (const currentTarget of targets) {
+  // CRITICAL: Sequential subdomain processing - ONE SUBDOMAIN AT A TIME
+  // Phase barrier enforced: each subdomain completes ALL agents before next subdomain starts
+  for (const currentTarget of targets) {
+    emitStdoutLog(scanId, `\n${'─'.repeat(80)}`, { agentLabel: "CONTROLLER" });
+    emitStdoutLog(scanId, `[PHASE-BARRIER] ⏸️  ENTERING PHASE BLOCK FOR TARGET: ${currentTarget}`, { agentLabel: "CONTROLLER" });
+    emitStdoutLog(scanId, `[PHASE-BARRIER] All ${agentEntries.length} agents will run sequentially on this target`, { agentLabel: "CONTROLLER" });
+    emitStdoutLog(scanId, `${'─'.repeat(80)}\n`, { agentLabel: "CONTROLLER" });
+    
+    // Agent execution for this specific subdomain (sequential)
+    for (const [agentKey, agent] of agentEntries) {
       const agentVulns: EnhancedVulnerability[] = [];
       
       // Agent-specific REAL TOOL EXECUTION with spawn() - ZERO ARTIFICIAL DELAYS
@@ -569,6 +580,11 @@ export async function runScannerAgent(
         emitStdoutLog(scanId, `[${agentKey}] Remediation: ${remediationFix}`, { agentLabel: agentKey, type: "remediation" });
       }
     }
+    
+    // ✅ PHASE COMPLETE: All agents finished for this target
+    emitStdoutLog(scanId, `\n[PHASE-BARRIER] ✅ PHASE BLOCK COMPLETE FOR TARGET: ${currentTarget}`, { agentLabel: "CONTROLLER" });
+    emitStdoutLog(scanId, `[PHASE-BARRIER] Agents processed: ${agentEntries.length}`, { agentLabel: "CONTROLLER" });
+    emitStdoutLog(scanId, `${'─'.repeat(80)}\n`, { agentLabel: "CONTROLLER" });
   }
 
   // Deduplicate vulnerabilities by title and target
