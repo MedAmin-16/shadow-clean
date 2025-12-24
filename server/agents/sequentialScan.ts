@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
+import { probeHttpTarget } from "../src/utils/toolExecutor";
 
 /**
  * SEQUENTIAL SCAN ORCHESTRATION - PHASE-BASED EXECUTION
@@ -76,8 +77,9 @@ function executeCommand(
 }
 
 /**
- * PHASE 1: Subdomain Discovery
- * Execute Subfinder/Assetfinder → Filter through HTTProbe
+ * PHASE 1: Subdomain Discovery (FIXED)
+ * Execute Assetfinder (absolute path) → Filter with internal Node.js HTTP probe
+ * NO SHELL CALLS. NO HTTPPROBE BINARY.
  */
 async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
   emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-1" });
@@ -98,8 +100,8 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
     
     emitStdoutLog(scanData.scanId, `[PHASE 1] Extracted domain for assetfinder: ${targetDomain}`, { agentLabel: "PHASE-1" });
 
-    // Step 1: Run Assetfinder
-    emitStdoutLog(scanData.scanId, `[PHASE 1 - Assetfinder] Discovering subdomains...`, { agentLabel: "PHASE-1" });
+    // Step 1: Run Assetfinder with ABSOLUTE PATH
+    emitStdoutLog(scanData.scanId, `[PHASE 1 - Assetfinder] Discovering subdomains with absolute path...`, { agentLabel: "PHASE-1" });
     const assetfinderOutput = await executeCommand(
       scanData.scanId,
       "/home/runner/workspace/bin/assetfinder",
@@ -107,50 +109,50 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
       "ASSETFINDER"
     );
 
-    const assetfinderSubs = assetfinderOutput
+    const discoveredSubs = assetfinderOutput
       .split("\n")
       .filter(line => line.trim() && !line.startsWith("[") && !line.startsWith("{"))
       .map(line => line.trim());
 
-    emitStdoutLog(scanData.scanId, `[PHASE 1] Assetfinder found ${assetfinderSubs.length} subdomains`, { agentLabel: "PHASE-1" });
+    emitStdoutLog(scanData.scanId, `[PHASE 1] Assetfinder discovered ${discoveredSubs.length} subdomains`, { agentLabel: "PHASE-1" });
 
-    // Step 2: Filter through HTTProbe
-    if (assetfinderSubs.length > 0) {
-      emitStdoutLog(scanData.scanId, `[PHASE 1 - HTTProbe] Filtering live subdomains...`, { agentLabel: "PHASE-1" });
+    // Step 2: Filter through internal Node.js HTTP probe (NO SHELL CALL, NO HTTPPROBE BINARY)
+    if (discoveredSubs.length > 0) {
+      emitStdoutLog(scanData.scanId, `[PHASE 1 - HTTPProbe] Filtering live subdomains with native Node.js probing...`, { agentLabel: "PHASE-1" });
       
-      const httpprobeInput = assetfinderSubs.join("\n");
-      const httpprobeOutput = await executeCommand(
-        scanData.scanId,
-        "bash",
-        ["-c", `echo "${httpprobeInput}" | /home/runner/workspace/bin/httpprobe -c 50 -p 80,443 -t 5000`],
-        "HTTPPROBE"
-      );
-
-      const liveSubdomains = httpprobeOutput
-        .split("\n")
-        .filter(line => line.trim() && (line.includes("http://") || line.includes("https://")))
-        .map(line => {
-          // Extract domain from URL
-          try {
-            const url = new URL(line);
-            return url.hostname;
-          } catch {
-            return line.split("//")[1]?.split("/")[0] || line;
+      const liveSubdomains: string[] = [];
+      
+      for (const subdomain of discoveredSubs) {
+        try {
+          const probeUrl = subdomain.startsWith("http") ? subdomain : `https://${subdomain}`;
+          const probeResult = await probeHttpTarget(scanData.scanId, probeUrl, "NATIVE-HTTPPROBE");
+          
+          if (probeResult.reachable) {
+            liveSubdomains.push(subdomain);
+            emitStdoutLog(scanData.scanId, `[PHASE 1] ✓ LIVE: ${subdomain} (HTTP ${probeResult.statusCode || 'N/A'})`, { agentLabel: "PHASE-1", type: "success" });
+          } else {
+            emitStdoutLog(scanData.scanId, `[PHASE 1] ✗ Dead: ${subdomain}`, { agentLabel: "PHASE-1", type: "info" });
           }
-        })
-        .filter((sub, idx, arr) => arr.indexOf(sub) === idx); // Deduplicate
+        } catch (probeError) {
+          emitStdoutLog(scanData.scanId, `[PHASE 1] ⚠️ Probe failed for ${subdomain}: ${probeError instanceof Error ? probeError.message : "unknown error"}`, { agentLabel: "PHASE-1", type: "warning" });
+        }
+      }
 
+      // CRITICAL: Save live subdomains to scanData for Phase 2
       scanData.subdomains = liveSubdomains;
-      emitStdoutLog(scanData.scanId, `[PHASE 1] HTTProbe verified ${liveSubdomains.length} live subdomain(s)`, { agentLabel: "PHASE-1" });
+      emitStdoutLog(scanData.scanId, `[PHASE 1] Native Node.js probing verified ${liveSubdomains.length} LIVE subdomain(s)`, { agentLabel: "PHASE-1", type: "success" });
       
       liveSubdomains.forEach((sub, idx) => {
         emitStdoutLog(scanData.scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`, { agentLabel: "PHASE-1" });
       });
+    } else {
+      emitStdoutLog(scanData.scanId, `[PHASE 1] ⚠️ No subdomains discovered`, { agentLabel: "PHASE-1", type: "warning" });
+      scanData.subdomains = [];
     }
 
     // Phase 1 Complete
-    emitStdoutLog(scanData.scanId, `\n[PHASE 1] ✅ COMPLETE - ${scanData.subdomains.length} subdomain(s) discovered`, { agentLabel: "PHASE-1" });
-    emitStdoutLog(scanData.scanId, `[PHASE 1] Hard block: Phase 2 will now begin...`, { agentLabel: "PHASE-1" });
+    emitStdoutLog(scanData.scanId, `\n[PHASE 1] ✅ COMPLETE - ${scanData.subdomains.length} LIVE subdomain(s) ready for Phase 2`, { agentLabel: "PHASE-1", type: "success" });
+    emitStdoutLog(scanData.scanId, `[PHASE 1] Hard block: Phase 2 (Katana crawling) will now begin...`, { agentLabel: "PHASE-1" });
     emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-1" });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
