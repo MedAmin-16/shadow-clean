@@ -2,6 +2,21 @@ import { spawn } from "child_process";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
+import {
+  createBanner,
+  createPhaseBox,
+  logPhaseInfo,
+  logToolExecution,
+  logFinding,
+  logSuccess,
+  logWarning,
+  logError,
+  logDiscovery,
+  createFinalReport,
+  createProgressLine,
+  icons,
+  colors,
+} from "../src/utils/terminalFormatter";
 
 /**
  * FULL DOMAIN-WIDE ENGINE - GLOBAL PHASE-BASED EXECUTION
@@ -84,10 +99,10 @@ function executeCommand(
  * Returns ALL live subdomains for downstream phases
  */
 async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
-  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-1" });
-  emitStdoutLog(scanData.scanId, `[PHASE 1] GLOBAL SUBDOMAIN DISCOVERY - STARTING`, { agentLabel: "PHASE-1" });
-  emitStdoutLog(scanData.scanId, `[PHASE 1] Target: ${scanData.target}`, { agentLabel: "PHASE-1" });
-  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-1" });
+  const bannerText = createBanner("PHASE-1: RECONNAISSANCE");
+  logPhaseInfo("PHASE-1", "Starting global subdomain discovery...", icons.discovery);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-1" });
+  logPhaseInfo("PHASE-1", `Target: ${scanData.target}`, icons.target);
 
   try {
     // Extract domain from URL if needed
@@ -102,7 +117,7 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
     emitStdoutLog(scanData.scanId, `[PHASE 1] Extracted domain: ${targetDomain}`, { agentLabel: "PHASE-1" });
 
     // Step 1: Run Assetfinder with absolute path
-    emitStdoutLog(scanData.scanId, `[PHASE 1] Running assetfinder...`, { agentLabel: "PHASE-1" });
+    logToolExecution("PHASE-1", "assetfinder", ["-subs-only", targetDomain]);
     const assetfinderOutput = await executeCommand(
       scanData.scanId,
       "/home/runner/workspace/bin/assetfinder",
@@ -115,11 +130,11 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
       .filter(line => line.trim() && !line.startsWith("[") && !line.startsWith("{"))
       .map(line => line.trim());
 
-    emitStdoutLog(scanData.scanId, `[PHASE 1] Discovered ${discoveredSubs.length} subdomains`, { agentLabel: "PHASE-1" });
+    logDiscovery("PHASE-1", discoveredSubs.length, "subdomains");
 
     // Step 2: Filter through HTTPX binary (FAST probing)
     if (discoveredSubs.length > 0) {
-      emitStdoutLog(scanData.scanId, `[PHASE 1] Probing ${discoveredSubs.length} subdomain(s) with HTTPX (fast)...`, { agentLabel: "PHASE-1" });
+      logToolExecution("PHASE-1", "httpx", ["-l", "targets.txt", "-status-code", "-follow-redirects"]);
       
       // Write subdomains to temp file for httpx
       const httpxInputFile = `${tmpdir()}/httpx-input-${scanData.scanId}.txt`;
@@ -150,10 +165,10 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         .filter((sub, idx, arr) => arr.indexOf(sub) === idx); // Deduplicate
       
       scanData.subdomains = liveSubdomains;
-      emitStdoutLog(scanData.scanId, `[PHASE 1] ✅ HTTPX verified ${liveSubdomains.length} LIVE subdomains`, { agentLabel: "PHASE-1", type: "success" });
+      logSuccess("PHASE-1", `HTTPX verified ${liveSubdomains.length} LIVE subdomains`);
       
-      liveSubdomains.forEach((sub, idx) => {
-        emitStdoutLog(scanData.scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`, { agentLabel: "PHASE-1" });
+      liveSubdomains.forEach((sub) => {
+        emitStdoutLog(scanData.scanId, `${icons.check} ${sub}`, { agentLabel: "PHASE-1" });
         scanData.subdomainMetadata.set(sub, { urlCount: 0, vulnerabilityCount: 0 });
       });
       
@@ -164,15 +179,14 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         // Ignore cleanup errors
       }
     } else {
-      emitStdoutLog(scanData.scanId, `[PHASE 1] ⚠️ No subdomains discovered`, { agentLabel: "PHASE-1", type: "warning" });
+      logWarning("PHASE-1", "No subdomains discovered");
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 1] ✅ COMPLETE - Ready for PHASE 2 (Global Crawling)`, { agentLabel: "PHASE-1", type: "success" });
-    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-1" });
+    logSuccess("PHASE-1", "COMPLETE - Ready for PHASE 2 (Global Crawling)");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 1 failed: ${errorMsg}`);
-    emitErrorLog(scanData.scanId, `[PHASE 1] FAILED: ${errorMsg}`);
+    logError("PHASE-1", errorMsg);
     throw error;
   }
 }
@@ -183,10 +197,9 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
  * Concurrency: -c 3 to prevent RAM exhaustion on Replit
  */
 async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
-  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-2" });
-  emitStdoutLog(scanData.scanId, `[PHASE 2] GLOBAL URL CRAWLING (${scanData.subdomains.length} subdomains)`, { agentLabel: "PHASE-2" });
-  emitStdoutLog(scanData.scanId, `[PHASE 2] Running Katana with -c 3 concurrency on all subdomains...`, { agentLabel: "PHASE-2" });
-  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2" });
+  const bannerText = createBanner("PHASE-2: ATTACK SURFACE MAPPING");
+  logPhaseInfo("PHASE-2", `Crawling ${scanData.subdomains.length} subdomains...`, icons.speed);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-2" });
 
   try {
     if (scanData.subdomains.length === 0) {
@@ -203,7 +216,7 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
     emitStdoutLog(scanData.scanId, `[PHASE 2] Wrote ${scanData.subdomains.length} subdomains to ${subdomainsFile}`, { agentLabel: "PHASE-2" });
 
     // Run Katana with -list flag and -c 3 concurrency
-    emitStdoutLog(scanData.scanId, `[PHASE 2] Executing: katana -list ${subdomainsFile} -c 3 -d 3 -ps`, { agentLabel: "PHASE-2" });
+    logToolExecution("PHASE-2", "katana", ["-list", subdomainsFile, "-c", "3", "-d", "3", "-ps"]);
     const katanaOutput = await executeCommand(
       scanData.scanId,
       "/home/runner/workspace/bin/katana",
@@ -218,7 +231,7 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
       .slice(0, 500); // Limit to 500 URLs total
 
     scanData.urls = allUrls;
-    emitStdoutLog(scanData.scanId, `[PHASE 2] ✅ Katana discovered ${allUrls.length} total URLs from all subdomains`, { agentLabel: "PHASE-2", type: "success" });
+    logDiscovery("PHASE-2", allUrls.length, "URLs");
 
     // Map URLs back to subdomains for reporting
     allUrls.forEach((url: string) => {
@@ -239,12 +252,11 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
       // Ignore cleanup errors
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 2] ✅ COMPLETE - Ready for PHASE 2.5 (SQLMap on Parameters)`, { agentLabel: "PHASE-2", type: "success" });
-    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2" });
+    logSuccess("PHASE-2", "COMPLETE - Ready for PHASE 2.5 (SQLMap on Parameters)");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 2 failed: ${errorMsg}`);
-    emitStdoutLog(scanData.scanId, `[PHASE 2] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 2.5...`, { agentLabel: "PHASE-2", type: "error" });
+    logWarning("PHASE-2", `ERROR: ${errorMsg}. Continuing to Phase 2.5...`);
   }
 }
 
@@ -273,26 +285,26 @@ function hasCommandParams(url: string): boolean {
  * Automatically trigger SQLMap on URLs with query parameters
  */
 async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
-  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-2.5" });
-  emitStdoutLog(scanData.scanId, `[PHASE 2.5] SQLMAP ON PARAMETERS`, { agentLabel: "PHASE-2.5" });
-  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.5" });
+  const bannerText = createBanner("PHASE-2.5: SQL INJECTION TESTING");
+  logPhaseInfo("PHASE-2.5", "Testing URLs for SQL injection vulnerabilities...", icons.injection);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-2.5" });
 
   try {
     const urlsWithParams = scanData.urls.filter(hasParameters);
     
     if (urlsWithParams.length === 0) {
-      emitStdoutLog(scanData.scanId, `[PHASE 2.5] No URLs with parameters found. Skipping SQLMap...`, { agentLabel: "PHASE-2.5", type: "info" });
+      logWarning("PHASE-2.5", "No URLs with parameters found. Skipping SQLMap...");
       return;
     }
 
-    emitStdoutLog(scanData.scanId, `[PHASE 2.5] Found ${urlsWithParams.length} URLs with parameters. Running SQLMap...`, { agentLabel: "PHASE-2.5" });
+    logDiscovery("PHASE-2.5", urlsWithParams.length, "URLs with parameters");
 
     // Test first 10 URLs with parameters (light scan)
     const urlsToTest = urlsWithParams.slice(0, 10);
 
     for (let i = 0; i < urlsToTest.length; i++) {
       const url = urlsToTest[i];
-      emitStdoutLog(scanData.scanId, `[PHASE 2.5] Testing [${i + 1}/${urlsToTest.length}] ${url}`, { agentLabel: "PHASE-2.5" });
+      emitStdoutLog(scanData.scanId, `${createProgressLine(i + 1, urlsToTest.length, "Testing")}`, { agentLabel: "PHASE-2.5" });
 
       const sqlmapOutput = await executeCommand(
         scanData.scanId,
@@ -309,16 +321,15 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
           url: url,
           description: `SQL injection detected via SQLMap`
         });
-        emitStdoutLog(scanData.scanId, `[PHASE 2.5] 🚨 SQL INJECTION FOUND on ${url}`, { agentLabel: "PHASE-2.5", type: "finding" });
+        logFinding("PHASE-2.5", `SQL Injection on ${url}`, "critical");
       }
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 2.5] ✅ COMPLETE - Ready for PHASE 2.6 (Commix on Command Params)`, { agentLabel: "PHASE-2.5", type: "success" });
-    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.5" });
+    logSuccess("PHASE-2.5", "COMPLETE - Ready for PHASE 2.6 (Commix on Command Params)");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 2.5 failed: ${errorMsg}`);
-    emitStdoutLog(scanData.scanId, `[PHASE 2.5] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 2.6...`, { agentLabel: "PHASE-2.5", type: "error" });
+    logWarning("PHASE-2.5", `ERROR: ${errorMsg}. Continuing to Phase 2.6...`);
   }
 }
 
@@ -327,26 +338,26 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
  * Automatically trigger Commix on URLs with command-like parameters
  */
 async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> {
-  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-2.6" });
-  emitStdoutLog(scanData.scanId, `[PHASE 2.6] COMMIX ON COMMAND PARAMETERS`, { agentLabel: "PHASE-2.6" });
-  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.6" });
+  const bannerText = createBanner("PHASE-2.6: COMMAND INJECTION TESTING");
+  logPhaseInfo("PHASE-2.6", "Testing URLs for command injection vulnerabilities...", icons.injection);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-2.6" });
 
   try {
     const urlsWithCommandParams = scanData.urls.filter(hasCommandParams);
     
     if (urlsWithCommandParams.length === 0) {
-      emitStdoutLog(scanData.scanId, `[PHASE 2.6] No URLs with command parameters found. Skipping Commix...`, { agentLabel: "PHASE-2.6", type: "info" });
+      logWarning("PHASE-2.6", "No URLs with command parameters found. Skipping Commix...");
       return;
     }
 
-    emitStdoutLog(scanData.scanId, `[PHASE 2.6] Found ${urlsWithCommandParams.length} URLs with command parameters. Running Commix...`, { agentLabel: "PHASE-2.6" });
+    logDiscovery("PHASE-2.6", urlsWithCommandParams.length, "URLs with command parameters");
 
     // Test first 5 URLs with command params (light scan)
     const urlsToTest = urlsWithCommandParams.slice(0, 5);
 
     for (let i = 0; i < urlsToTest.length; i++) {
       const url = urlsToTest[i];
-      emitStdoutLog(scanData.scanId, `[PHASE 2.6] Testing [${i + 1}/${urlsToTest.length}] ${url}`, { agentLabel: "PHASE-2.6" });
+      emitStdoutLog(scanData.scanId, `${createProgressLine(i + 1, urlsToTest.length, "Testing")}`, { agentLabel: "PHASE-2.6" });
 
       const commixOutput = await executeCommand(
         scanData.scanId,
@@ -363,16 +374,15 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
           url: url,
           description: `Command injection detected via Commix`
         });
-        emitStdoutLog(scanData.scanId, `[PHASE 2.6] 🚨 RCE FOUND on ${url}`, { agentLabel: "PHASE-2.6", type: "finding" });
+        logFinding("PHASE-2.6", `RCE / Command Injection on ${url}`, "critical");
       }
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 2.6] ✅ COMPLETE - Ready for PHASE 3 (Global Vuln Scan)`, { agentLabel: "PHASE-2.6", type: "success" });
-    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.6" });
+    logSuccess("PHASE-2.6", "COMPLETE - Ready for PHASE 3 (Global Vuln Scan)");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 2.6 failed: ${errorMsg}`);
-    emitStdoutLog(scanData.scanId, `[PHASE 2.6] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 3...`, { agentLabel: "PHASE-2.6", type: "error" });
+    logWarning("PHASE-2.6", `ERROR: ${errorMsg}. Continuing to Phase 3...`);
   }
 }
 
@@ -382,10 +392,9 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
  * Concurrency: -c 3 to prevent resource exhaustion
  */
 async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
-  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-3" });
-  emitStdoutLog(scanData.scanId, `[PHASE 3] GLOBAL VULNERABILITY SCANNING (${scanData.subdomains.length} subdomains)`, { agentLabel: "PHASE-3" });
-  emitStdoutLog(scanData.scanId, `[PHASE 3] Running Nuclei with -c 3 concurrency on all subdomains...`, { agentLabel: "PHASE-3" });
-  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-3" });
+  const bannerText = createBanner("PHASE-3: VULNERABILITY ANALYSIS");
+  logPhaseInfo("PHASE-3", `Scanning ${scanData.subdomains.length} subdomains for vulnerabilities...`, icons.scan);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-3" });
 
   try {
     if (scanData.subdomains.length === 0) {
@@ -450,7 +459,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       }
     });
 
-    emitStdoutLog(scanData.scanId, `[PHASE 3] ✅ Nuclei found ${findingsCount} vulnerabilities across all subdomains`, { agentLabel: "PHASE-3", type: "success" });
+    logDiscovery("PHASE-3", findingsCount, "vulnerabilities");
 
     // Clean up temp file
     try {
@@ -459,12 +468,11 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       // Ignore cleanup errors
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 3] ✅ COMPLETE - Ready for PHASE 4 (Global XSS Testing)`, { agentLabel: "PHASE-3", type: "success" });
-    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-3" });
+    logSuccess("PHASE-3", "COMPLETE - Ready for PHASE 4 (Global XSS Testing)");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 3 failed: ${errorMsg}`);
-    emitStdoutLog(scanData.scanId, `[PHASE 3] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 4...`, { agentLabel: "PHASE-3", type: "error" });
+    logWarning("PHASE-3", `ERROR: ${errorMsg}. Continuing to Phase 4...`);
   }
 }
 
@@ -473,9 +481,9 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
  * Pass ALL discovered URLs to Dalfox for comprehensive XSS testing
  */
 async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
-  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-4" });
-  emitStdoutLog(scanData.scanId, `[PHASE 4] GLOBAL XSS TESTING (${scanData.urls.length} URLs)`, { agentLabel: "PHASE-4" });
-  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-4" });
+  const bannerText = createBanner("PHASE-4: XSS EXPLOITATION TESTING");
+  logPhaseInfo("PHASE-4", `Testing ${scanData.urls.length} URLs for XSS vulnerabilities...`, icons.fire);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-4" });
 
   try {
     if (scanData.urls.length === 0) {
@@ -503,7 +511,7 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
     let xssCount = 0;
     if (dalfoxOutput.toLowerCase().includes("vulnerable") || dalfoxOutput.toLowerCase().includes("xss")) {
       xssCount = (dalfoxOutput.match(/vulnerable|xss/gi) || []).length;
-      emitStdoutLog(scanData.scanId, `[PHASE 4] 🚨 XSS vulnerabilities detected!`, { agentLabel: "PHASE-4", type: "finding" });
+      logFinding("PHASE-4", "XSS vulnerabilities detected", "high");
       
       scanData.vulnerabilities.push({
         title: "Cross-Site Scripting (XSS)",
@@ -514,7 +522,7 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
       });
     }
 
-    emitStdoutLog(scanData.scanId, `[PHASE 4] ✅ XSS testing complete (${xssCount} findings)`, { agentLabel: "PHASE-4", type: "success" });
+    logSuccess("PHASE-4", `XSS testing complete (${xssCount} findings)`);
 
     // Clean up temp file
     try {
@@ -523,12 +531,11 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
       // Ignore cleanup errors
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 4] ✅ COMPLETE - Scan Ready for Dashboard`, { agentLabel: "PHASE-4", type: "success" });
-    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-4" });
+    logSuccess("PHASE-4", "COMPLETE - Scan Ready for Dashboard");
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 4 failed: ${errorMsg}`);
-    emitStdoutLog(scanData.scanId, `[PHASE 4] ⚠️ ERROR: ${errorMsg}. Continuing to summary...`, { agentLabel: "PHASE-4", type: "error" });
+    logWarning("PHASE-4", `ERROR: ${errorMsg}. Continuing to summary...`);
   }
 }
 
@@ -559,10 +566,11 @@ export async function runSequentialScan(
 
   console.log(`[DEBUG] runSequentialScan triggered for scanId=${scanId}, target=${target}`);
 
-  emitStdoutLog(scanId, `\n${'█'.repeat(80)}`, { agentLabel: "SEQUENTIAL-SCAN" });
-  emitStdoutLog(scanId, `[FULL DOMAIN-WIDE ENGINE] Starting comprehensive scan for ${target}`, { agentLabel: "SEQUENTIAL-SCAN" });
-  emitStdoutLog(scanId, `[FULL DOMAIN-WIDE ENGINE] Phases: 1) HTTPX Discovery → 2) Crawling → 2.5) SQLMap → 2.6) Commix → 3) Nuclei → 4) Dalfox`, { agentLabel: "SEQUENTIAL-SCAN" });
-  emitStdoutLog(scanId, `${'█'.repeat(80)}\n`, { agentLabel: "SEQUENTIAL-SCAN" });
+  const startTime = Date.now();
+  const banner = createBanner("ELITE-SCANNER");
+  emitStdoutLog(scanId, banner, { agentLabel: "SEQUENTIAL-SCAN" });
+  logPhaseInfo("SEQUENTIAL-SCAN", `Starting comprehensive scan for ${target}`, icons.target);
+  logPhaseInfo("SEQUENTIAL-SCAN", "Phases: 1) HTTPX → 2) Katana → 2.5) SQLMap → 2.6) Commix → 3) Nuclei → 4) Dalfox", icons.star);
 
   try {
     // PHASE 1: Discover all live subdomains with HTTPX
@@ -595,25 +603,10 @@ export async function runSequentialScan(
     // PHASE 4: Global XSS testing on all discovered URLs
     await phase4GlobalXssTesting(scanData);
 
-    // Final summary with per-subdomain breakdown
-    emitStdoutLog(scanId, `\n${'█'.repeat(80)}`, { agentLabel: "SEQUENTIAL-SCAN" });
-    emitStdoutLog(scanId, `[FULL DOMAIN-WIDE ENGINE] ✅ SCAN COMPLETE`, { agentLabel: "SEQUENTIAL-SCAN", type: "success" });
-    emitStdoutLog(scanId, `${'█'.repeat(80)}`, { agentLabel: "SEQUENTIAL-SCAN" });
-    
-    emitStdoutLog(scanId, `\n[SUMMARY] Global Results:`, { agentLabel: "SEQUENTIAL-SCAN" });
-    emitStdoutLog(scanId, `  • Live Subdomains: ${scanData.subdomains.length}`, { agentLabel: "SEQUENTIAL-SCAN" });
-    emitStdoutLog(scanId, `  • Total URLs Discovered: ${scanData.urls.length}`, { agentLabel: "SEQUENTIAL-SCAN" });
-    emitStdoutLog(scanId, `  • Vulnerabilities Found: ${scanData.vulnerabilities.length}`, { agentLabel: "SEQUENTIAL-SCAN" });
-    emitStdoutLog(scanId, `  • Errors: ${scanData.errors.length}`, { agentLabel: "SEQUENTIAL-SCAN" });
-    
-    emitStdoutLog(scanId, `\n[PER-SUBDOMAIN BREAKDOWN]:`, { agentLabel: "SEQUENTIAL-SCAN" });
-    scanData.subdomains.forEach(sub => {
-      const meta = scanData.subdomainMetadata.get(sub);
-      const vulnCount = scanData.vulnerabilities.filter(v => v.subdomain === sub).length;
-      emitStdoutLog(scanId, `  • ${sub}: ${meta?.urlCount || 0} URLs | ${vulnCount} vulnerabilities`, { agentLabel: "SEQUENTIAL-SCAN" });
-    });
-    
-    emitStdoutLog(scanId, `\n${'█'.repeat(80)}\n`, { agentLabel: "SEQUENTIAL-SCAN" });
+    // Final summary with professional table and report
+    const duration = Date.now() - startTime;
+    const reportText = createFinalReport(target, scanData, duration);
+    emitStdoutLog(scanId, reportText, { agentLabel: "SEQUENTIAL-SCAN" });
 
     return {
       success: true,
