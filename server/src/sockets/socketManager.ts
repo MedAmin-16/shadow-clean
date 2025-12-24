@@ -259,6 +259,24 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
     return;
   }
 
+  // FILTER: Block projectdiscovery banners, ASCII art, and version info from reaching frontend
+  const shouldFilter = (message: string): boolean => {
+    return (
+      message.includes("projectdiscovery") ||
+      message.includes("__") ||
+      message.includes("/_/") ||
+      message.includes("Current httpx version") ||
+      message.includes("Current nuclei version") ||
+      message.includes("v1.3.5") ||
+      message.includes("outdated")
+    );
+  };
+
+  // Do not emit filtered messages
+  if (shouldFilter(log.message)) {
+    return;
+  }
+
   const fullLog = { ...log, scanId };
   
   // Buffer the log (keep last 10 per scan)

@@ -5,6 +5,9 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { Copy, Check } from "lucide-react";
 
+// Import Fira Code font from Google Fonts
+import "@fontsource/fira-code";
+
 export interface TerminalLog {
   id: string;
   timestamp: string;
@@ -25,22 +28,22 @@ interface LiveTerminalProps {
   className?: string;
 }
 
-const logStyles: Record<TerminalLog["type"], { prefix: string; color: string }> = {
-  exec: { prefix: "[EXEC]", color: "text-cyan-400" },
-  stdout: { prefix: "[STDOUT]", color: "text-green-400" },
-  stderr: { prefix: "[STDERR]", color: "text-red-400" },
-  ai_thought: { prefix: "[AI THOUGHT]", color: "text-purple-400" },
-  info: { prefix: "[INFO]", color: "text-blue-400" },
-  warning: { prefix: "[WARN]", color: "text-yellow-400" },
-  error: { prefix: "[ERROR]", color: "text-red-500" },
-  progress: { prefix: "[PROGRESS]", color: "text-green-400" },
-  url_stream: { prefix: "[CRAWLING]", color: "text-cyan-400" },
-  phase_update: { prefix: "[PHASE]", color: "text-yellow-400" },
-  finding: { prefix: "[FINDING]", color: "text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,1)] font-black" },
-  poc_payload: { prefix: "[PoC PAYLOAD]", color: "text-green-400" },
-  poc_evidence: { prefix: "[EVIDENCE]", color: "text-green-400" },
-  remediation: { prefix: "[REMEDIATION]", color: "text-cyan-300" },
-  debug: { prefix: "[DEBUG]", color: "text-gray-500" },
+const logStyles: Record<TerminalLog["type"], { prefix: string; color: string; bgColor: string }> = {
+  exec: { prefix: "[SCAN]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
+  stdout: { prefix: "[INFO]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
+  stderr: { prefix: "[ERROR]", color: "#FF0033", bgColor: "rgba(255, 0, 51, 0.1)" },
+  ai_thought: { prefix: "[AI]", color: "#FF00FF", bgColor: "rgba(255, 0, 255, 0.1)" },
+  info: { prefix: "[INFO]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
+  warning: { prefix: "[WARN]", color: "#FFAA00", bgColor: "rgba(255, 170, 0, 0.1)" },
+  error: { prefix: "[ERROR]", color: "#FF0033", bgColor: "rgba(255, 0, 51, 0.1)" },
+  progress: { prefix: "[PROGRESS]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
+  url_stream: { prefix: "[CRAWLING]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
+  phase_update: { prefix: "[PHASE]", color: "#FFAA00", bgColor: "rgba(255, 170, 0, 0.1)" },
+  finding: { prefix: "[CRITICAL]", color: "#FF0033", bgColor: "rgba(255, 0, 51, 0.2)" },
+  poc_payload: { prefix: "[PAYLOAD]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
+  poc_evidence: { prefix: "[EVIDENCE]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
+  remediation: { prefix: "[FIX]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
+  debug: { prefix: "[DEBUG]", color: "#888888", bgColor: "rgba(136, 136, 136, 0.05)" },
 };
 
 // CRITICAL findings detection - BRIGHT RED highlighting
@@ -136,15 +139,31 @@ export function LiveTerminal({ logs, isActive, planLevel, className }: LiveTermi
     });
   };
 
+  const badgeStyle = (logType: TerminalLog["type"]) => {
+    const style = logStyles[logType];
+    return {
+      display: "inline-block",
+      padding: "0.25rem 0.5rem",
+      backgroundColor: style.bgColor,
+      color: style.color,
+      fontWeight: "bold",
+      marginRight: "0.5rem",
+      borderRadius: "2px",
+      fontSize: "0.75rem",
+      border: `1px solid ${style.color}`,
+      textTransform: "uppercase" as const,
+    };
+  };
+
   return (
-    <div style={{ backgroundColor: "#000000", border: "1px solid #164e3f", borderRadius: "0.5rem", overflow: "hidden" }} className={className}>
-      <div style={{ padding: "1rem", borderBottom: "1px solid #164e3f", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontFamily: "monospace", color: "#4ade80", fontSize: "0.875rem" }}>
-          shadowtwin@swarm:~$ ▌
+    <div style={{ backgroundColor: "#000000", border: "2px solid #00FFCC", borderRadius: "0.5rem", overflow: "hidden", boxShadow: "0 0 20px rgba(0, 255, 204, 0.3)" }} className={className}>
+      <div style={{ padding: "1rem", borderBottom: "1px solid #00FFCC", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(0, 255, 204, 0.05)" }}>
+        <div style={{ fontFamily: "'Fira Code', monospace", color: "#00FFCC", fontSize: "0.875rem", fontWeight: "bold" }}>
+          elite-scanner@swarm:~$ █
         </div>
         <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-          <span style={{ color: "#22c55e", fontSize: "0.75rem" }}>
-            {isActive ? "LIVE" : "IDLE"} | {planLevel}
+          <span style={{ color: "#00FFCC", fontSize: "0.75rem", fontFamily: "'Fira Code', monospace", fontWeight: "bold" }}>
+            {isActive ? "🔴 LIVE" : "⚪ IDLE"} | {planLevel}
           </span>
         </div>
       </div>
@@ -157,14 +176,14 @@ export function LiveTerminal({ logs, isActive, planLevel, className }: LiveTermi
           overflowY: "auto",
           padding: "1rem",
           backgroundColor: "#000000",
-          fontFamily: "monospace",
+          fontFamily: "'Fira Code', monospace",
           fontSize: "0.875rem",
           color: "#ffffff",
         }}
       >
         {filteredLogs.length === 0 ? (
-          <div style={{ color: "#15803d" }}>
-            <span>▸</span> Initializing 10-Agent Swarm...
+          <div style={{ color: "#00FFCC" }}>
+            <span>▸</span> Initializing 14-Agent Reconnaissance Swarm...
           </div>
         ) : (
           filteredLogs.map((log) => (
@@ -176,23 +195,28 @@ export function LiveTerminal({ logs, isActive, planLevel, className }: LiveTermi
                 marginBottom: "0.25rem",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
+                padding: "0.25rem 0.5rem",
               }}
             >
-              <span style={{ color: "#15803d", marginRight: "0.5rem" }}>
+              <span style={{ color: "#666666", marginRight: "0.5rem", fontFamily: "'Fira Code', monospace" }}>
                 {formatTimestamp(log.timestamp)}
               </span>
-              <span style={{ color: "#22c55e", fontWeight: "bold" }}>
-                [{log.type}]:
+              <span style={badgeStyle(log.type)}>
+                {logStyles[log.type].prefix}
               </span>
-              {" "}
-              <span style={{ color: "#d1d5db" }}>
+              {log.agentLabel && (
+                <span style={{ color: "#00FFCC", marginRight: "0.5rem", fontWeight: "bold" }}>
+                  [{log.agentLabel}]
+                </span>
+              )}
+              <span style={{ color: "#FFFFFF" }}>
                 {log.message}
               </span>
             </div>
           ))
         )}
         {isActive && filteredLogs.length > 0 && (
-          <div style={{ color: "#22c55e", marginTop: "0.5rem" }}>
+          <div style={{ color: "#00FFCC", marginTop: "0.5rem" }}>
             <span>▸</span>
           </div>
         )}
