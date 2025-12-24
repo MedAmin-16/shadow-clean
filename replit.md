@@ -6,47 +6,43 @@ ShadowTwin is an AI-powered Cybersecurity Digital Twin SaaS platform. It creates
 
 The platform features a multi-agent scanning pipeline that performs reconnaissance, vulnerability scanning, exploitation testing, and report generation. The frontend provides a dashboard for managing projects, monitoring scans, viewing vulnerabilities, and generating compliance reports.
 
-## Recent Changes (December 19, 2025 - PRODUCTION DATABASE REBUILD COMPLETE)
+## Recent Changes (December 24, 2025 - PRO PACK FINALIZED AS ULTIMATE VERSION)
 
-### ✅ FULL DATABASE OVERHAUL - 20 PRODUCTION-READY TABLES
-**COMPLETED: Clean slate deployment with professional schema**
+### ✨ PRO PACK MERGED WITH ELITE - NOW THE ULTIMATE VERSION
 
-1. **Auth & Users (3 tables)**:
-   - `users`: Core authentication with password_hash, email, plan management
-   - `user_credits`: Credit balance tracking (auto-initialized to 1000 credits per user via trigger)
-   - `user_integrations`: Third-party API integrations support
+**COMPLETED: Complete tool arsenal integration into PRO Pack**
 
-2. **Scanning Engine (3 tables)**:
-   - `scans`: Main scan results with agent tracking and status
-   - `scan_sandboxes`: Isolated sandbox environments for safe testing
-   - `monitoring_schedules`: Continuous monitoring configurations
+#### All 14 Advanced Agents Now in PRO:
+1. **AGENT-01**: Network Reconnaissance (Nmap)
+2. **AGENT-02**: Subdomain Enumeration (Assetfinder)
+3. **AGENT-03**: Web Crawler & Spider (Katana)
+4. **AGENT-04**: Vulnerability Scanner (Nuclei)
+5. **AGENT-05**: XSS Exploitation (Dalfox)
+6. **AGENT-06**: Command Injection (Commix)
+7. **AGENT-07**: Parameter Discovery (Arjun)
+8. **AGENT-08**: Database Exploitation (SQLMap Level 3)
+9. **AGENT-09**: URL History Mining (Waybackurls)
+10. **AGENT-10**: HTTP Probing (HTTPProbe)
+11. **AGENT-11**: Technology Detection (WhatWeb)
+12. **AGENT-12**: Directory Fuzzing (FFuf)
+13. **AGENT-13**: Hidden Parameters (ParamSpider)
+14. **AGENT-14**: Archive History (GAU)
 
-3. **ShadowLogic Core (3 tables)**:
-   - `shadowlogic_scans`: Business logic vulnerability scanning
-   - `shadowlogic_vulnerabilities`: Findings linked to scan_id and user_id with proper FK
-   - `shadowlogic_discoveries`: Detailed discovery metadata
-
-4. **Advanced Modules (4 tables)**:
-   - `phishing_campaigns`: Phishing simulation engine
-   - `cloud_scan_configs`: AWS/Azure/GCP scanning configurations
-   - `threat_intel`: CVE and threat intelligence database
-   - `compliance_reports`: ISO/GDPR compliance reporting
-
-5. **Additional Infrastructure (7 tables)**:
-   - `credit_transactions`: Full audit trail for credit system
-   - `scan_reports`: Individual scan report storage
-   - `vulnerabilities`: Centralized vulnerability database
-   - `assets`: Asset inventory management
-   - `remediation_tracking`: Fix tracking and verification
-   - `audit_logs`: System-wide audit trail
-   - `admin_sessions`: Admin authentication tracking
+#### Additional Infrastructure:
+- **Secret Scanning**: TruffleHog for credential detection + JS file analysis
+- **Notification System**: Telegram, Discord, Slack webhook alerts for critical vulnerabilities
+- **Cleanup Automation**: RAM management and stalled process cleanup script
+- **OWASP Mapping**: All vulnerabilities mapped to OWASP Top 10 (2021) categories
+- **Tool Installation**: Go tools installation script for easy deployment
 
 **Key Features**:
-- ✓ All foreign keys correctly mapped with CASCADE delete
-- ✓ Auto-initialization trigger: Every new user gets 1000 STANDARD credits
-- ✓ Verified: Backend writes without "Column not found" errors
-- ✓ 20 tables total with proper indexing for performance
-- ✓ Timestamp tracking (created_at, updated_at) on all tables
+- ✓ ALL 14 agents active for PRO Pack scans
+- ✓ Dalfox (XSS), Commix (RCE), TruffleHog (Secrets) integrated
+- ✓ Real binaries installed (Nuclei, Katana, HTTPx, Subfinder, FFuf, GAU)
+- ✓ Notification service supports Discord, Telegram, Slack
+- ✓ Automatic cleanup script kills stalled processes
+- ✓ OWASP compliance categories on all findings
+- ✓ NO difference between PRO and ELITE - merged into one ultimate tier
 
 ## User Preferences
 
@@ -74,17 +70,16 @@ Preferred communication style: Simple, everyday language.
 - **Real-time**: Socket.io for scan completion notifications and live terminal updates
 - **Email**: Nodemailer for scan completion emails (requires SMTP config)
 - **Reports**: PDFKit for generating downloadable PDF reports
+- **Notifications**: Telegram, Discord, Slack webhooks for critical vulnerabilities
 
 ### Multi-Agent Scanning Pipeline
-The core security scanning system uses a 10-agent swarm architecture:
+The core security scanning system uses a 14-agent ultimate pentesting swarm:
 
-**Core Agents (Runs for all plans)**:
+**All Agents Available for PRO/ELITE Plans**:
 1. **Recon Agent**: Strategic Planning Engine with credit-based gating and tiered LLM access
-2. **Scanner Agent**: 10-Agent Swarm with vulnerability identification, PoC and remediation code
+2. **Scanner Agent**: 14-Agent Swarm with vulnerability identification, PoC and remediation code
 3. **Exploiter Agent**: Attempts safe exploitation to validate vulnerabilities
 4. **Reporter Agent**: Strategic Intelligence Engine with financial risk quantification
-
-**ELITE Tier Agents** (Level 7+ - run after standard pipeline for ELITE users):
 5. **RL Exploiter Agent**: Reinforcement learning-based exploitation with Q-learning
 6. **Prophet Agent**: Causal inference engine with root cause analysis
 7. **Autonomous Defense Agent**: WAF/Firewall hotfix integration
@@ -107,15 +102,16 @@ client/           # React frontend application
     hooks/        # Custom React hooks
     lib/          # Utilities and query client
 server/           # Express backend
-  agents/         # Security scanning agent implementations (10-Agent Swarm)
+  agents/         # Security scanning agent implementations (14-Agent Swarm)
   src/
     controllers/  # Request handlers for API endpoints
     middlewares/  # Rate limiting, API key auth
-    services/     # Email, PDF report generation, threat intel
+    services/     # Email, PDF report generation, threat intel, notifications
     sockets/      # Socket.io real-time notifications
     utils/        # Logger, target blacklist
 shared/           # Shared types and database schema
 reports/          # Generated PDF reports (auto-created)
+bin/              # Security tools and scripts
 ```
 
 ### Environment Variables
@@ -141,6 +137,12 @@ SMTP_PORT         # SMTP port (default: 587)
 SMTP_USER         # SMTP username
 SMTP_PASS         # SMTP password
 SMTP_FROM         # From email address
+
+# Optional - Webhook Notifications
+TELEGRAM_BOT_TOKEN    # Telegram bot token for alerts
+TELEGRAM_CHAT_ID      # Telegram chat ID for receiving alerts
+DISCORD_WEBHOOK_URL   # Discord webhook for critical vulnerability alerts
+SLACK_WEBHOOK_URL     # Slack webhook for alerts
 ```
 
 ### Security Features
@@ -152,14 +154,16 @@ SMTP_FROM         # From email address
 - **Strict User Attribution**: All scans require authenticated users
 - **Rate Limiting**: 100 req/15min on all scan endpoints
 - **Zero False Positives**: Strict 85%+ confidence scoring for vulnerability validation
+- **OWASP Top 10 Mapping**: All findings categorized against OWASP Top 10 (2021)
 
 ### Key Design Decisions
 - **Monorepo structure**: Single repository with shared types between frontend and backend
 - **Type safety**: Full TypeScript coverage with shared schema definitions
 - **Component architecture**: Presentational components with cinematic UI effects
-- **10-Agent Swarm**: Parallel security testing across multiple specialized tools
+- **14-Agent Ultimate Arsenal**: All advanced scanning tools available in both PRO and ELITE
 - **Groq Integration**: Ultra-fast AI analysis with llama-3.3-70b-versatile model
 - **Path aliases**: `@/` for client source, `@shared/` for shared code
+- **Unified Plan Tiers**: PRO and ELITE merged - PRO is now the ultimate version
 
 ## Build & Deployment Status
 
@@ -169,8 +173,28 @@ SMTP_FROM         # From email address
 - All TypeScript compilation successful
 - Database schema deployed
 - App running on port 5000
+- All 14 security tools operational
 
 ## External Dependencies
+
+### Scanning Tools (All 14 agents)
+- **Nuclei**: CVE scanning with templates
+- **Katana**: Web crawler and spider
+- **HTTPx**: HTTP client and port scanner
+- **Subfinder**: Subdomain enumeration
+- **FFuf**: Web fuzzer
+- **GAU**: Get All URLs from archives
+- **Dalfox**: XSS vulnerability scanner
+- **Commix**: Command injection tester
+- **SQLMap**: SQL injection testing (Level 3)
+- **TruffleHog**: Secret detection
+- **Assetfinder**: Asset discovery
+- **HTTPProbe**: HTTP probing
+- **WhatWeb**: Technology identification
+- **Waybackurls**: URL archive mining
+- **Arjun**: Parameter discovery
+- **ParamSpider**: Parameter extraction
+- **Kiterunner**: API endpoint detection
 
 ### Database
 - **PostgreSQL**: Primary database (Neon-backed)

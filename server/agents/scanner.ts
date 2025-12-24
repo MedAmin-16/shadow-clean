@@ -213,9 +213,15 @@ const vulnerabilityTemplates: VulnerabilityTemplate[] = [
   },
 ];
 
-// 14-Agent Ultimate Pentesting Swarm (AGENT-01 to AGENT-14)
-// ELITE-EXCLUSIVE TOOLS: Dalfox (XSS), Commix (RCE), Arjun (Parameter Discovery)
-// PRO TOOLS: Katana (Crawling), Nuclei (CVE), SQLMap (SQL Injection)
+// 14-AGENT ULTIMATE PENTESTING SWARM (AGENT-01 to AGENT-14)
+// ✨ ALL CAPABILITIES NOW IN PRO PACK ✨
+// PRO Pack is the ULTIMATE version with every tool:
+// • Network: Nmap, Subfinder, Assetfinder, HTTPProbe
+// • Web: Katana (crawling), HTTPx (scanning), WhatWeb (tech detection)
+// • Vuln: Nuclei (CVE), SQLMap (L3), Dalfox (XSS), Commix (RCE)
+// • OSINT: Waybackurls, GAU, ParamSpider, Arjun, FFuf
+// • Secrets: TruffleHog, JS credential mining
+// ELITE is now identical to PRO (merged for maximum accessibility)
 export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
@@ -248,11 +254,13 @@ export async function runScannerAgent(
   const userId = options?.userId || "unknown";
   const findings: EnhancedVulnerability[] = [];
   
-  // PRO PACK: ULTIMATE VERSION with all 14 agents (ELITE merged into PRO)
-  if (planLevel === "PRO") {
+  // ✨ PRO PACK: ULTIMATE VERSION WITH ALL 14 AGENTS
+  // MERGED: All ELITE capabilities now in PRO (Dalfox, Commix, TruffleHog, RL Exploiter, Prophet, etc.)
+  // NO difference between PRO and ELITE - both get the FULL arsenal
+  if (planLevel === "PRO" || planLevel === "ELITE") {
     emitStdoutLog(scanId, `[SYSTEM] Pipeline starting...`);
-    emitStdoutLog(scanId, `[SYSTEM] User Plan: ${planLevel} - ULTIMATE ARSENAL ACTIVATED`, { agentLabel: "SCANNER" });
-    emitStdoutLog(scanId, `[DEEP-SCAN] Activating ULTIMATE pentesting mode with all 14 agents + Dalfox + Commix`);
+    emitStdoutLog(scanId, `[SYSTEM] User Plan: ${planLevel} - ✨ ULTIMATE ARSENAL ACTIVATED ✨`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[DEEP-SCAN] Activating ULTIMATE pentesting mode with all 14 agents`);
     
     // Run real secret/JS scanning service
     emitStdoutLog(scanId, `[RUNNING] secretScanService.runFullSecretScan() on ${target}`, { agentLabel: "SCANNER" });
