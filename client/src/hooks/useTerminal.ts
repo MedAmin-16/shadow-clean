@@ -8,15 +8,29 @@ interface UseTerminalOptions {
   enabled?: boolean;
 }
 
+export interface VulnerabilityStats {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
 interface UseTerminalReturn {
   logs: TerminalLog[];
   isConnected: boolean;
   clearLogs: () => void;
+  vulnStats: VulnerabilityStats;
 }
 
 export function useTerminal({ scanId, userId, enabled = true }: UseTerminalOptions): UseTerminalReturn {
   const [logs, setLogs] = useState<TerminalLog[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [vulnStats, setVulnStats] = useState<VulnerabilityStats>({
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  });
   const socketRef = useRef<Socket | null>(null);
 
   const clearLogs = useCallback(() => {
@@ -74,6 +88,13 @@ export function useTerminal({ scanId, userId, enabled = true }: UseTerminalOptio
       }
     });
 
+    socket.on("vulnerability:stats", (data: { scanId: string; stats: VulnerabilityStats }) => {
+      if (data.scanId === scanId) {
+        console.log("✅ [SOCKET] Vulnerability stats updated:", data.stats);
+        setVulnStats(data.stats);
+      }
+    });
+
     return () => {
       if (socketRef.current) {
         socketRef.current.emit("unsubscribe:scan", scanId);
@@ -93,5 +114,6 @@ export function useTerminal({ scanId, userId, enabled = true }: UseTerminalOptio
     logs,
     isConnected,
     clearLogs,
+    vulnStats,
   };
 }

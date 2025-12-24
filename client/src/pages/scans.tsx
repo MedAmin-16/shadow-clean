@@ -120,7 +120,7 @@ export default function ScansPage() {
     return scans.find(s => s.status === "running");
   }, [scans]);
 
-  const { logs, isConnected } = useTerminal({
+  const { logs, isConnected, vulnStats } = useTerminal({
     scanId: terminalScanId || activeScan?.id || null,
     userId: user?.userId,
     enabled: showTerminal && (!!terminalScanId || !!activeScan),
@@ -435,6 +435,7 @@ export default function ScansPage() {
                   logs={logs}
                   isActive={scan.status === "running" && isConnected}
                   planLevel={(user?.planLevel as "STANDARD" | "PRO" | "ELITE") || "STANDARD"}
+                  vulnStats={vulnStats}
                   className="border-t border-green-900/30"
                 />
               )}

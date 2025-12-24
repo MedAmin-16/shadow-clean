@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { Copy, Check } from "lucide-react";
+import { VulnerabilityCounters, type VulnerabilityStats } from "./VulnerabilityCounters";
 
 // Import Fira Code font from Google Fonts
 import "@fontsource/fira-code";
@@ -25,6 +26,7 @@ interface LiveTerminalProps {
   logs: TerminalLog[];
   isActive: boolean;
   planLevel: "STANDARD" | "PRO" | "ELITE";
+  vulnStats?: VulnerabilityStats;
   className?: string;
 }
 
@@ -106,9 +108,18 @@ function BlinkingCursor() {
   );
 }
 
-export function LiveTerminal({ logs, isActive, planLevel, className }: LiveTerminalProps) {
+export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className }: LiveTerminalProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+
+  const defaultStats: VulnerabilityStats = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  };
+
+  const displayStats = vulnStats || defaultStats;
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -166,6 +177,10 @@ export function LiveTerminal({ logs, isActive, planLevel, className }: LiveTermi
             {isActive ? "🔴 LIVE" : "⚪ IDLE"} | {planLevel}
           </span>
         </div>
+      </div>
+
+      <div style={{ padding: "1rem", backgroundColor: "#000000", borderBottom: "1px solid #00FFCC" }}>
+        <VulnerabilityCounters stats={displayStats} />
       </div>
       
       <div

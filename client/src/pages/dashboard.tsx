@@ -102,7 +102,7 @@ export default function DashboardPage() {
     return scans.find(s => s.status === "running");
   }, [scans]);
 
-  const { logs, isConnected } = useTerminal({
+  const { logs, isConnected, vulnStats } = useTerminal({
     scanId: terminalScanId || activeScan?.id || null,
     userId: user?.userId,
     enabled: showTerminal && (!!terminalScanId || !!activeScan),
@@ -364,6 +364,7 @@ export default function DashboardPage() {
             logs={logs}
             isActive={activeScan.status === "running" && isConnected}
             planLevel={(user?.planLevel as "STANDARD" | "PRO" | "ELITE") || "STANDARD"}
+            vulnStats={vulnStats}
           />
         </div>
       )}

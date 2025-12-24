@@ -12,6 +12,7 @@ const userSockets = new Map<string, Set<string>>();
 const userPlanLevels = new Map<string, PlanLevel>();
 const socketToUser = new Map<string, string>();
 const logBuffer = new Map<string, TerminalLogPayload[]>(); // Buffer last 10 logs per scan
+const vulnStats = new Map<string, { critical: number; high: number; medium: number; low: number }>(); // Track vulnerability counts per scan
 
 export function initSocketServer(httpServer: HttpServer): SocketServer {
   io = new SocketServer(httpServer, {
@@ -253,6 +254,23 @@ export interface TerminalLogPayload {
   eta?: string;
 }
 
+export function trackVulnerability(scanId: string, severity: "critical" | "high" | "medium" | "low"): void {
+  if (!vulnStats.has(scanId)) {
+    vulnStats.set(scanId, { critical: 0, high: 0, medium: 0, low: 0 });
+  }
+  const stats = vulnStats.get(scanId)!;
+  stats[severity]++;
+
+  // Emit updated stats to all scan subscribers
+  if (io) {
+    io.to(`scan:${scanId}`).emit("vulnerability:stats", {
+      scanId,
+      stats,
+      lastUpdate: new Date().toISOString(),
+    });
+  }
+}
+
 export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "scanId">): void {
   if (!io) {
     console.error(`[SOCKET] io not initialized when emitting for scan ${scanId}`);
@@ -275,6 +293,19 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
   // Do not emit filtered messages
   if (shouldFilter(log.message)) {
     return;
+  }
+
+  // Track vulnerability if message contains severity badge
+  if (log.message.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
+    if (log.message.includes("☢️ CRITICAL")) {
+      trackVulnerability(scanId, "critical");
+    } else if (log.message.includes("🔥 HIGH")) {
+      trackVulnerability(scanId, "high");
+    } else if (log.message.includes("🟡 MEDIUM")) {
+      trackVulnerability(scanId, "medium");
+    } else if (log.message.includes("🛡️ LOW")) {
+      trackVulnerability(scanId, "low");
+    }
   }
 
   const fullLog = { ...log, scanId };
