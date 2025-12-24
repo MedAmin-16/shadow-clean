@@ -225,8 +225,8 @@ const vulnerabilityTemplates: VulnerabilityTemplate[] = [
 export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
-  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -u" },
-  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
+  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -system-chromium --headless --no-sandbox -u" },
+  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
   "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -u" },
   "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 -m commix -u" },
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
@@ -306,9 +306,9 @@ export async function runScannerAgent(
     }
 
     // Run real Nuclei scanning for CVEs - SKIP ON ERROR
-    emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2`, { agentLabel: "SCANNER" });
     try {
-      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2"], "AGENT-04");
+      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/workspace/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2"], "AGENT-04");
       
       // Parse Nuclei JSON output if available
       try {
@@ -492,7 +492,7 @@ export async function runScannerAgent(
           emitStdoutLog(scanId, `[${agentKey}] Commix execution skipped or error`, { agentLabel: agentKey });
         }
       } else if (agentKey === "AGENT-04") {
-        // Nuclei: -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
+        // Nuclei: -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
         try {
           const args = agent.command.split(" ").concat([currentTarget]);
           const output = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", args, agentKey);

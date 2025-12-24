@@ -245,6 +245,13 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
               if (userPlanLevel === "ELITE" && reconData.strategic_decision_log) {
                 emitAiThoughtLog(scanId, `Strategic analysis complete. Attack vectors identified.`);
               }
+              
+              // HARD BLOCK: Phase 1 Complete - Enforce sequential execution
+              emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
+              emitStdoutLog(scanId, `✅ PHASE 1: RECONNAISSANCE [100% COMPLETE]`);
+              emitStdoutLog(scanId, `Discovery Summary: ${reconData.subdomains?.length || 1} subdomain(s) | Ports: ${reconData.ports?.length || 0} | Services: ${reconData.services?.length || 0}`);
+              emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
+              emitInfoLog(scanId, `[HARD BLOCK] Phase 1 complete. Phase 2 will now begin.`);
             }
             result = reconData;
             break;
@@ -319,6 +326,14 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             };
             
             emitStdoutLog(scanId, `[SWARM PHASE 2-3 COMPLETE] Total vulnerabilities across all subdomains: ${scannerData.totalFindings}`);
+            
+            // HARD BLOCK: Phase 2-3 Complete - Enforce sequential execution
+            emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
+            emitStdoutLog(scanId, `✅ PHASE 2-3: ATTACK SURFACE MAPPING & VULNERABILITY ANALYSIS [100% COMPLETE]`);
+            emitStdoutLog(scanId, `Analysis Summary: ${subdomainResults.length} subdomains analyzed | ${scannerData.totalFindings} total vulnerabilities | Critical: ${scannerData.criticalCount} | High: ${scannerData.highCount}`);
+            emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
+            emitInfoLog(scanId, `[HARD BLOCK] Phases 2-3 complete. Phase 4 will now begin.`);
+            
             result = scannerData;
             break;
           
@@ -401,6 +416,14 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             };
             
             emitStdoutLog(scanId, `[SWARM PHASE 4 COMPLETE] Total successful exploits across all subdomains: ${aggregatedExploits.filter(e => e.success).length}`);
+            
+            // HARD BLOCK: Phase 4 Complete - Enforce sequential execution
+            emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
+            emitStdoutLog(scanId, `✅ PHASE 4: TARGETED EXPLOITATION [100% COMPLETE]`);
+            emitStdoutLog(scanId, `Exploitation Summary: ${aggregatedExploits.length} total exploits attempted | Successful: ${aggregatedExploits.filter(e => e.success).length} | Risk Level: ${exploiterData.riskLevel}`);
+            emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
+            emitInfoLog(scanId, `[HARD BLOCK] Phase 4 complete. Phase 5 will now begin.`);
+            
             result = exploiterData;
             break;
           
