@@ -292,25 +292,14 @@ export async function runScannerAgent(
   const userId = options?.userId || "unknown";
   const findings: EnhancedVulnerability[] = [];
   
-  // FORCE PRINT: Show the ASCII banner at the VERY FIRST LINE with no buffering
-  process.stdout.write("\n");
-  process.stdout.write("╔════════════════════════════════════════════════════════════════════════════╗\n");
-  process.stdout.write("║                                                                            ║\n");
-  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
-  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
-  process.stdout.write("║                                                                            ║\n");
-  process.stdout.write("║         🎯 ELITE-SCANNER - MULTI-AGENT RECONNAISSANCE ENGINE 🎯         ║\n");
-  process.stdout.write("║                                                                            ║\n");
-  process.stdout.write("║  Modern Security Scanner | Multi-Agent Reconnaissance Engine              ║\n");
-  process.stdout.write("║                                                                            ║\n");
-  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
-  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
-  process.stdout.write("║                                                                            ║\n");
-  process.stdout.write("╚════════════════════════════════════════════════════════════════════════════╝\n");
-  process.stdout.write("\n");
+  // Emit clean banner to frontend (no ANSI codes, plain text)
+  emitStdoutLog(scanId, `════════════════════════════════════════════════════════════════════════════`, { agentLabel: "SCANNER" });
+  emitStdoutLog(scanId, `🎯 ELITE-SCANNER - MULTI-AGENT RECONNAISSANCE ENGINE 🎯`, { agentLabel: "SCANNER" });
+  emitStdoutLog(scanId, `Modern Security Scanner | Multi-Agent Reconnaissance Engine`, { agentLabel: "SCANNER" });
+  emitStdoutLog(scanId, `════════════════════════════════════════════════════════════════════════════`, { agentLabel: "SCANNER" });
   
-  // Print phase info using simple console.log (no gradient)
-  console.log(`[${new Date().toLocaleTimeString()}] Starting scan on target: ${target}`);
+  // Print phase info
+  emitStdoutLog(scanId, `[${new Date().toLocaleTimeString()}] Starting scan on target: ${target}`, { agentLabel: "SCANNER" });
   
   // ✨ PRO PACK: ULTIMATE VERSION WITH ALL 14 AGENTS
   // MERGED: All ELITE capabilities now in PRO (Dalfox, Commix, TruffleHog, RL Exploiter, Prophet, etc.)

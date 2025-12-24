@@ -4,6 +4,7 @@ import type { NotificationPayload } from "../types";
 import type { PlanLevel } from "@shared/schema";
 import { createLogger } from "../utils/logger";
 import { storage } from "../../storage";
+import { stripAnsi } from "../utils/ansiCleaner";
 
 const logger = createLogger("socket");
 
@@ -295,20 +296,23 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
     return;
   }
 
+  // Strip ANSI codes before sending to frontend
+  const cleanMessage = stripAnsi(log.message);
+
   // Track vulnerability if message contains severity badge
-  if (log.message.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
-    if (log.message.includes("☢️ CRITICAL")) {
+  if (cleanMessage.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
+    if (cleanMessage.includes("☢️ CRITICAL")) {
       trackVulnerability(scanId, "critical");
-    } else if (log.message.includes("🔥 HIGH")) {
+    } else if (cleanMessage.includes("🔥 HIGH")) {
       trackVulnerability(scanId, "high");
-    } else if (log.message.includes("🟡 MEDIUM")) {
+    } else if (cleanMessage.includes("🟡 MEDIUM")) {
       trackVulnerability(scanId, "medium");
-    } else if (log.message.includes("🛡️ LOW")) {
+    } else if (cleanMessage.includes("🛡️ LOW")) {
       trackVulnerability(scanId, "low");
     }
   }
 
-  const fullLog = { ...log, scanId };
+  const fullLog = { ...log, scanId, message: cleanMessage };
   
   // Buffer the log (keep last 10 per scan)
   if (!logBuffer.has(scanId)) {
