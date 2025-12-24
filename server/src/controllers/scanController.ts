@@ -59,6 +59,10 @@ export async function startScan(req: AuthenticatedRequest, res: Response): Promi
           // CRITICAL: Wait 2 seconds for client to subscribe to socket
           await new Promise(resolve => setTimeout(resolve, 2000));
           
+          // FIRST: Update status to running immediately
+          console.log(`[DEBUG] Starting Sequential Scan for: ${scanTarget}`);
+          await storage.updateScan(scanId, { status: 'running', progress: 5 });
+          
           emitStdoutLog(scanId, `[SYSTEM] Socket verification - beginning real-time scan...`);
           emitStdoutLog(scanId, `[REAL-TIME]: Testing security vulnerabilities...`);
           process.stdout.write(`[PIPELINE_START] ${scanId} execution beginning\n`);

@@ -377,6 +377,9 @@ export async function runSequentialScan(
     errors: []
   };
 
+  // DEBUG: Log that function was triggered
+  console.log(`[DEBUG] runSequentialScan triggered for scanId=${scanId}, target=${target}`);
+
   emitStdoutLog(scanId, `\n${'█'.repeat(80)}`, { agentLabel: "SEQUENTIAL-SCAN" });
   emitStdoutLog(scanId, `[SEQUENTIAL SCAN] Starting scan for ${target}`, { agentLabel: "SEQUENTIAL-SCAN" });
   emitStdoutLog(scanId, `[SEQUENTIAL SCAN] Hard block enforcement: Each phase completes fully before next begins`, { agentLabel: "SEQUENTIAL-SCAN" });
