@@ -6,11 +6,7 @@ import type {
   ExploiterFindings, 
   ReporterOutput,
   PlanLevel,
-  EnhancedScannerFindings,
   EnhancedReporterOutput,
-  EnhancedVulnerability,
-  ProphetAnalysis,
-  Level7ExploiterFindings,
   GatedAgentId
 } from "@shared/schema";
 import { hasAgentAccess } from "@shared/schema";
@@ -185,7 +181,7 @@ async function phase1SubdomainDiscovery(
     emitStdoutLog(scanId, `Assetfinder found: ${assetfinderDomains.length} domains`);
 
     // Merge and deduplicate
-    const allDomains = [...new Set([...subfinderDomains, ...assetfinderDomains])];
+    const allDomains = Array.from(new Set([...subfinderDomains, ...assetfinderDomains]));
     emitStdoutLog(scanId, `Merged results: ${allDomains.length} unique domains`);
 
     // Filter through HTTProbe
@@ -255,7 +251,7 @@ async function phase2UrlCapture(
     emitStdoutLog(scanId, `  GAU found: ${gauUrls.length} URLs`);
 
     // Merge URLs
-    const allUrls = [...new Set([...katanaUrls, ...gauUrls])];
+    const allUrls = Array.from(new Set([...katanaUrls, ...gauUrls]));
     scanData.urls.set(subdomain, allUrls);
 
     emitStdoutLog(scanId, `  ✅ PHASE 2 Complete: ${allUrls.length} unique URLs collected`);
@@ -477,7 +473,7 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
   }
 
   let reconData: ReconFindings | undefined;
-  let scannerData: EnhancedScannerFindings | undefined;
+  let scannerData: ScannerFindings | undefined;
   let exploiterData: ExploiterFindings | undefined;
 
   try {
@@ -587,18 +583,16 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             
             scannerData = {
               vulnerabilities: aggregatedVulnerabilities,
-              apiEndpoints: [],
-              technologies: [],
               totalFindings: aggregatedVulnerabilities.length,
-              criticalCount: aggregatedVulnerabilities.filter(v => v.severity === "critical").length,
-              highCount: aggregatedVulnerabilities.filter(v => v.severity === "high").length,
               decisionLog: [`Scanned ${liveSubdomains.length} subdomains`],
-              agentResults: {},
-            };
+            } as any;
+            
+            const criticalCount = aggregatedVulnerabilities.filter((v: any) => v.severity === "critical").length;
+            const highCount = aggregatedVulnerabilities.filter((v: any) => v.severity === "high").length;
             
             emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
             emitStdoutLog(scanId, `✅ PHASE 2-3: VULNERABILITY ANALYSIS [100% COMPLETE]`);
-            emitStdoutLog(scanId, `Analysis Summary: ${scannerData.totalFindings} total vulnerabilities | Critical: ${scannerData.criticalCount} | High: ${scannerData.highCount}`);
+            emitStdoutLog(scanId, `Analysis Summary: ${aggregatedVulnerabilities.length} total vulnerabilities | Critical: ${criticalCount} | High: ${highCount}`);
             emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
             
             result = scannerData;
@@ -613,9 +607,8 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             const aggregatedExploits: any[] = [];
             exploiterData = {
               exploitAttempts: aggregatedExploits,
-              accessGained: undefined,
               riskLevel: "medium",
-            };
+            } as ExploiterFindings;
             
             emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
             emitStdoutLog(scanId, `✅ PHASE 4: TARGETED EXPLOITATION [100% COMPLETE]`);
@@ -657,7 +650,7 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             
             emitStdoutLog(scanId, `Report generated successfully. Security Score: ${reporterResult.securityScore}/100`);
             
-            if ('planLevel' in reporterResult && (reporterResult.planLevel === "ELITE" || reporterResult.planLevel === "STANDARD")) {
+            if ('planLevel' in reporterResult && (reporterResult.planLevel === "ELITE" || reporterResult.planLevel === "PRO")) {
               try {
                 const reportFormats = await generateAllReportFormats(
                   scanId,
@@ -668,16 +661,16 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
                 );
                 
                 if (reportFormats.executivePdf) {
-                  (result as EnhancedReporterOutput).executivePdfPath = reportFormats.executivePdf;
+                  (result as any).executivePdfPath = reportFormats.executivePdf;
                 }
                 if (reportFormats.technicalPdf) {
-                  (result as EnhancedReporterOutput).technicalPdfPath = reportFormats.technicalPdf;
+                  (result as any).technicalPdfPath = reportFormats.technicalPdf;
                 }
                 if (reportFormats.jsonExport) {
-                  (result as EnhancedReporterOutput).rawDataExportPath = reportFormats.jsonExport;
+                  (result as any).rawDataExportPath = reportFormats.jsonExport;
                 }
                 if (reportFormats.csvExport) {
-                  (result as EnhancedReporterOutput).csvExportPath = reportFormats.csvExport;
+                  (result as any).csvExportPath = reportFormats.csvExport;
                 }
               } catch (pdfError) {
                 console.log("[PIPELINE] PDF generation failed, continuing without PDFs:", pdfError);
