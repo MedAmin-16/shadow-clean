@@ -86,12 +86,24 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
   emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-1" });
 
   try {
+    // Extract domain from URL if needed - assetfinder requires DOMAIN only, not full URL
+    let targetDomain = scanData.target;
+    try {
+      const url = new URL(scanData.target.startsWith('http') ? scanData.target : `https://${scanData.target}`);
+      targetDomain = url.hostname;
+    } catch {
+      // If URL parsing fails, use target as-is (likely already a domain)
+      targetDomain = scanData.target.split('/')[0];
+    }
+    
+    emitStdoutLog(scanData.scanId, `[PHASE 1] Extracted domain for assetfinder: ${targetDomain}`, { agentLabel: "PHASE-1" });
+
     // Step 1: Run Assetfinder
     emitStdoutLog(scanData.scanId, `[PHASE 1 - Assetfinder] Discovering subdomains...`, { agentLabel: "PHASE-1" });
     const assetfinderOutput = await executeCommand(
       scanData.scanId,
       "/home/runner/workspace/bin/assetfinder",
-      ["-subs-only", scanData.target],
+      ["-subs-only", targetDomain],
       "ASSETFINDER"
     );
 
