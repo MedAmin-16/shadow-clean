@@ -149,6 +149,91 @@ function executeCommandWithStreaming(
 }
 
 /**
+ * ASSETFINDER DISCOVERY ENGINE WITH TIMEOUT
+ * Streams subdomains in real-time with immediate logging
+ * Kills after 30 seconds of no new discoveries
+ */
+function executeAssetfinderWithDiscovery(
+  scanId: string,
+  targetDomain: string
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    const discoveredSubdomains = new Set<string>();
+    let lastDiscoveryTime = Date.now();
+    const timeoutMs = 30000; // 30 seconds
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    let processKilled = false;
+
+    emitExecLog(scanId, `[ASSETFINDER] $ /home/runner/workspace/bin/assetfinder -subs-only ${targetDomain}`);
+    emitStdoutLog(scanId, `[DEBUG] Assetfinder starting subdomain discovery on ${targetDomain}...`, { agentLabel: "ASSETFINDER", type: "info" });
+
+    const child = spawn("/home/runner/workspace/bin/assetfinder", ["-subs-only", targetDomain], { 
+      shell: true,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    // Set idle timeout - if 30 seconds pass without new subdomain, kill it
+    const setIdleTimeout = () => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      timeoutHandle = setTimeout(() => {
+        if (!processKilled && discoveredSubdomains.size > 0) {
+          emitStdoutLog(scanId, `[DEBUG] Assetfinder idle for 30s with ${discoveredSubdomains.size} subdomains. Killing to proceed...`, { agentLabel: "ASSETFINDER", type: "warning" });
+          processKilled = true;
+          child.kill("SIGTERM");
+        }
+      }, timeoutMs);
+    };
+
+    setIdleTimeout();
+
+    child.stdout?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim() && !l.startsWith("[") && !l.startsWith("{"));
+      
+      lines.forEach(line => {
+        const subdomain = line.trim();
+        if (subdomain && !discoveredSubdomains.has(subdomain)) {
+          discoveredSubdomains.add(subdomain);
+          lastDiscoveryTime = Date.now();
+          
+          // IMMEDIATE EMISSION - no buffering
+          emitStdoutLog(scanId, `🔍 [DISCOVERY] Found: ${subdomain}`, { agentLabel: "ASSETFINDER", type: "success" });
+          
+          // Reset idle timeout on each new discovery
+          setIdleTimeout();
+        }
+      });
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        emitStdoutLog(scanId, `[ASSETFINDER] [ERROR] ${line}`, { agentLabel: "ASSETFINDER", type: "error" });
+      });
+    });
+
+    child.on("close", (code: number) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      
+      if (discoveredSubdomains.size === 0) {
+        emitStdoutLog(scanId, `[DEBUG] Assetfinder found 0 subdomains (timeout or no results). Proceeding...`, { agentLabel: "ASSETFINDER", type: "warning" });
+      } else {
+        emitStdoutLog(scanId, `[ASSETFINDER] ✅ Discovery complete: ${discoveredSubdomains.size} subdomains found`, { agentLabel: "ASSETFINDER", type: "success" });
+      }
+      
+      resolve(Array.from(discoveredSubdomains));
+    });
+
+    child.on("error", (err: Error) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      emitStdoutLog(scanId, `[DEBUG] Assetfinder failed: ${err.message}. Using empty buffer...`, { agentLabel: "ASSETFINDER", type: "error" });
+      resolve(Array.from(discoveredSubdomains));
+    });
+  });
+}
+
+/**
  * PHASE 1: Subdomain Discovery (GLOBAL)
  * Execute Assetfinder → Filter with HTTPX binary for FAST probing
  * Returns ALL live subdomains for downstream phases
@@ -171,19 +256,12 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
     
     emitStdoutLog(scanData.scanId, `[PHASE 1] Extracted domain: ${targetDomain}`, { agentLabel: "PHASE-1" });
 
-    // Step 1: Run Assetfinder with absolute path
+    // Step 1: Run Assetfinder with STREAMING DISCOVERY
     logToolExecution("PHASE-1", "assetfinder", ["-subs-only", targetDomain]);
-    const assetfinderOutput = await executeCommand(
+    const discoveredSubs = await executeAssetfinderWithDiscovery(
       scanData.scanId,
-      "/home/runner/workspace/bin/assetfinder",
-      ["-subs-only", targetDomain],
-      "ASSETFINDER"
+      targetDomain
     );
-
-    const discoveredSubs = assetfinderOutput
-      .split("\n")
-      .filter(line => line.trim() && !line.startsWith("[") && !line.startsWith("{"))
-      .map(line => line.trim());
 
     logDiscovery("PHASE-1", discoveredSubs.length, "subdomains");
 
