@@ -248,11 +248,11 @@ export async function runScannerAgent(
   const userId = options?.userId || "unknown";
   const findings: EnhancedVulnerability[] = [];
   
-  // ELITE/PRO plans: Use professional deep scan with real tool execution
-  if (planLevel === "ELITE" || planLevel === "PRO") {
+  // PRO PACK: ULTIMATE VERSION with all 14 agents (ELITE merged into PRO)
+  if (planLevel === "PRO") {
     emitStdoutLog(scanId, `[SYSTEM] Pipeline starting...`);
-    emitStdoutLog(scanId, `[SYSTEM] User Plan: ${planLevel}`, { agentLabel: "SCANNER" });
-    emitStdoutLog(scanId, `[DEEP-SCAN] Activating professional penetration testing mode for ${planLevel} plan`);
+    emitStdoutLog(scanId, `[SYSTEM] User Plan: ${planLevel} - ULTIMATE ARSENAL ACTIVATED`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[DEEP-SCAN] Activating ULTIMATE pentesting mode with all 14 agents + Dalfox + Commix`);
     
     // Run real secret/JS scanning service
     emitStdoutLog(scanId, `[RUNNING] secretScanService.runFullSecretScan() on ${target}`, { agentLabel: "SCANNER" });
@@ -358,6 +358,7 @@ export async function runScannerAgent(
         };
         findings.push(vuln);
         emitStdoutLog(scanId, `🚨 [CRITICAL] SQL Injection Vulnerability Found (Confirmed)`, { agentLabel: "SCANNER", type: "finding" });
+        await notifyWebhook(scanId, vuln); // Send webhook alert for critical finding
       } else if (hasNonInjectable) {
         emitStdoutLog(scanId, `✓ [INFO] SQLMap: Target tested - No SQL injection vulnerabilities detected`, { agentLabel: "SCANNER", type: "info" });
       }
@@ -390,8 +391,8 @@ export async function runScannerAgent(
     agentLabel: "CONTROLLER"
   });
   
-  // Plan-based agent filtering: STANDARD = 4 agents, PRO = 10 agents, ELITE = 14 agents (ALL)
-  const agentLimit = (planLevel as string) === "STANDARD" ? 4 : ((planLevel as string) === "PRO" ? 10 : 14);
+  // Plan-based agent filtering: STANDARD = 4 agents, PRO = 14 agents (ULTIMATE), ELITE = 14 agents (merged)
+  const agentLimit = (planLevel as string) === "STANDARD" ? 4 : 14; // PRO now gets all 14
   const agentEntries = Object.entries(AGENT_SWARM).slice(0, agentLimit);
 
   // Agent Swarm Parallel Execution: Each agent tests all subdomains with PURE SPAWN()
@@ -433,56 +434,54 @@ export async function runScannerAgent(
           emitStdoutLog(scanId, `[${agentKey}] ⚠️ SQLMap execution error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
         }
       } else if (agentKey === "AGENT-05") {
-        // ELITE-ONLY: Dalfox XSS Scanner
-        if (planLevel === "ELITE") {
-          try {
-            const args = agent.command.split(" ").concat([currentTarget]);
-            const output = await executeAgent(scanId, "/home/runner/workspace/bin/dalfox", args, agentKey);
-            if (output.match(/vulnerable|xss|injection/i)) {
-              const vuln: EnhancedVulnerability = {
-                id: `${agentKey}-xss-${Date.now()}`,
-                title: "Cross-Site Scripting (XSS) Vulnerability",
-                description: `XSS found via Dalfox advanced scanning.`,
-                severity: "high",
-                confidenceScore: 92,
-                owaspCategory: "A03:2021-Injection",
-                sansTop25: "CWE-79",
-                remediationCode: "Implement output encoding and CSP headers.",
-                port: 443,
-                service: "https",
-              };
-              agentVulns.push(vuln);
-              emitStdoutLog(scanId, `[${agentKey}] 🚨 [HIGH] XSS Vulnerability Detected via Dalfox`, { agentLabel: agentKey, type: "finding" });
-            }
-          } catch (error) {
-            emitStdoutLog(scanId, `[${agentKey}] Dalfox execution skipped or error`, { agentLabel: agentKey });
+        // PRO PACK: Dalfox XSS Scanner (NOW ALWAYS ENABLED)
+        try {
+          const args = agent.command.split(" ").concat([currentTarget]);
+          const output = await executeAgent(scanId, "/home/runner/workspace/bin/dalfox", args, agentKey);
+          if (output.match(/vulnerable|xss|injection/i)) {
+            const vuln: EnhancedVulnerability = {
+              id: `${agentKey}-xss-${Date.now()}`,
+              title: "Cross-Site Scripting (XSS) Vulnerability",
+              description: `XSS found via Dalfox advanced scanning.`,
+              severity: "high",
+              confidenceScore: 92,
+              owaspCategory: "A03:2021-Injection",
+              sansTop25: "CWE-79",
+              remediationCode: "Implement output encoding and CSP headers.",
+              port: 443,
+              service: "https",
+            };
+            agentVulns.push(vuln);
+            emitStdoutLog(scanId, `[${agentKey}] 🚨 [HIGH] XSS Vulnerability Detected via Dalfox`, { agentLabel: agentKey, type: "finding" });
+            await notifyWebhook(scanId, vuln); // Send webhook alert
           }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] Dalfox execution skipped or error`, { agentLabel: agentKey });
         }
       } else if (agentKey === "AGENT-06") {
-        // ELITE-ONLY: Commix Command Injection Tester
-        if (planLevel === "ELITE") {
-          try {
-            const args = agent.command.split(" ").concat([currentTarget]);
-            const output = await executeAgent(scanId, "python3", ["-m", "commix", "-u", currentTarget], agentKey);
-            if (output.match(/vulnerable|rce|command.*injection/i)) {
-              const vuln: EnhancedVulnerability = {
-                id: `${agentKey}-rce-${Date.now()}`,
-                title: "Remote Code Execution (RCE) Vulnerability",
-                description: `Command injection via Commix detection.`,
-                severity: "critical",
-                confidenceScore: 94,
-                owaspCategory: "A03:2021-Injection",
-                sansTop25: "CWE-78",
-                remediationCode: "Use secure command execution APIs and input validation.",
-                port: 443,
-                service: "https",
-              };
-              agentVulns.push(vuln);
-              emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] RCE Vulnerability Detected via Commix`, { agentLabel: agentKey, type: "finding" });
-            }
-          } catch (error) {
-            emitStdoutLog(scanId, `[${agentKey}] Commix execution skipped or error`, { agentLabel: agentKey });
+        // PRO PACK: Commix Command Injection Tester (NOW ALWAYS ENABLED)
+        try {
+          const args = agent.command.split(" ").concat([currentTarget]);
+          const output = await executeAgent(scanId, "python3", ["-m", "commix", "-u", currentTarget], agentKey);
+          if (output.match(/vulnerable|rce|command.*injection/i)) {
+            const vuln: EnhancedVulnerability = {
+              id: `${agentKey}-rce-${Date.now()}`,
+              title: "Remote Code Execution (RCE) Vulnerability",
+              description: `Command injection via Commix detection.`,
+              severity: "critical",
+              confidenceScore: 94,
+              owaspCategory: "A03:2021-Injection",
+              sansTop25: "CWE-78",
+              remediationCode: "Use secure command execution APIs and input validation.",
+              port: 443,
+              service: "https",
+            };
+            agentVulns.push(vuln);
+            emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] RCE Vulnerability Detected via Commix`, { agentLabel: agentKey, type: "finding" });
+            await notifyWebhook(scanId, vuln); // Send webhook alert
           }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] Commix execution skipped or error`, { agentLabel: agentKey });
         }
       } else if (agentKey === "AGENT-04") {
         // Nuclei: -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
