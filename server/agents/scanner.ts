@@ -43,6 +43,7 @@ import {
   emitExecLog,
   emitStdoutLog,
 } from "../src/sockets/socketManager";
+import { initializeProgress, updateProgress, completeProgress } from "../src/utils/progressTracker";
 import { Groq } from "groq-sdk";
 import { spawn } from "child_process";
 import { 

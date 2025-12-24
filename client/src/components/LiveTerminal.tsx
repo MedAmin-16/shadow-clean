@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { Copy, Check } from "lucide-react";
 import { VulnerabilityCounters, type VulnerabilityStats } from "./VulnerabilityCounters";
+import { TerminalSpinner } from "./TerminalSpinner";
 
 // Import Fira Code font from Google Fonts
 import "@fontsource/fira-code";
@@ -28,6 +29,7 @@ interface LiveTerminalProps {
   planLevel: "STANDARD" | "PRO" | "ELITE";
   vulnStats?: VulnerabilityStats;
   className?: string;
+  activeTool?: string;
 }
 
 const logStyles: Record<TerminalLog["type"], { prefix: string; color: string; bgColor: string }> = {
@@ -108,9 +110,10 @@ function BlinkingCursor() {
   );
 }
 
-export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className }: LiveTerminalProps) {
+export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className, activeTool }: LiveTerminalProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [activeToolName, setActiveToolName] = useState<string>("");
 
   const defaultStats: VulnerabilityStats = {
     critical: 0,
@@ -126,6 +129,17 @@ export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className }
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs, autoScroll]);
+
+  useEffect(() => {
+    // Extract tool name from the last log if it contains [RUNNING] or [REAL-TIME]
+    if (logs.length > 0) {
+      const lastLog = logs[logs.length - 1];
+      const match = lastLog.message.match(/\[AGENT-\d+\]|httpx|katana|nuclei/i);
+      if (match) {
+        setActiveToolName(match[0]);
+      }
+    }
+  }, [logs]);
 
   const handleScroll = () => {
     if (scrollRef.current) {
@@ -169,8 +183,9 @@ export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className }
   return (
     <div style={{ backgroundColor: "#000000", border: "2px solid #00FFCC", borderRadius: "0.5rem", overflow: "hidden", boxShadow: "0 0 20px rgba(0, 255, 204, 0.3)" }} className={className}>
       <div style={{ padding: "1rem", borderBottom: "1px solid #00FFCC", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(0, 255, 204, 0.05)" }}>
-        <div style={{ fontFamily: "'Fira Code', monospace", color: "#00FFCC", fontSize: "0.875rem", fontWeight: "bold" }}>
-          elite-scanner@swarm:~$ █
+        <div style={{ fontFamily: "'Fira Code', monospace", color: "#00FFCC", fontSize: "0.875rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span>elite-scanner@swarm:~$ █</span>
+          {isActive && activeToolName && <TerminalSpinner isActive={true} toolName={activeToolName} />}
         </div>
         <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
           <span style={{ color: "#00FFCC", fontSize: "0.75rem", fontFamily: "'Fira Code', monospace", fontWeight: "bold" }}>
