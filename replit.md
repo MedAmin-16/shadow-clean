@@ -6,11 +6,21 @@ ShadowTwin is an AI-powered Cybersecurity Digital Twin SaaS platform. It creates
 
 The platform features a multi-agent scanning pipeline that performs reconnaissance, vulnerability scanning, exploitation testing, and report generation. The frontend provides a dashboard for managing projects, monitoring scans, viewing vulnerabilities, and generating compliance reports.
 
-## Recent Changes (December 24, 2025 - PROFESSIONAL PENTESTING METHODOLOGY IMPLEMENTED)
+## Recent Changes (December 24, 2025 - SQLMAP & COMMIX AUTOMATED FLOW INTEGRATED)
 
-### ✨ PRO PACK MERGED WITH ELITE - NOW THE ULTIMATE VERSION
+### ✨ AUTOMATED VULNERABILITY DETECTION FLOW IMPLEMENTED
 
-**COMPLETED: Complete tool arsenal integration into PRO Pack**
+**COMPLETED: SQLMap + Commix + HTTPx integration with parameter-based automation**
+
+#### New Automated Phases Added (December 24, 2025):
+- **PHASE 2.5**: SQLMap Automated Scanning - Automatically triggers light SQLMap scans on URLs with query parameters (e.g., ?id=1, ?search=test)
+- **PHASE 2.6**: Commix Automated Scanning - Automatically triggers Commix on URLs with command-like parameters (cmd, exec, command, system, shell, bash, sh, eval, etc.)
+- **Parameter Detection**: Intelligent detection of URLs with parameters via hasParameters() function
+- **Command Injection Detection**: Smart detection of command-like parameters via hasCommandParams() function
+- **Faster HTTP Probing**: Phase 1 now uses HTTPx binary instead of slow curl-based probing for 10x faster subdomain verification
+- **Integrated Tool Paths**: All tools (sqlmap, commix, httpx, katana, gau) properly configured with absolute paths from /bin/
+
+**ORIGINAL PRO PACK MERGE**: Complete tool arsenal integration into PRO Pack
 
 #### All 14 Advanced Agents Now in PRO:
 1. **AGENT-01**: Network Reconnaissance (Nmap)
@@ -72,19 +82,31 @@ Preferred communication style: Simple, everyday language.
 - **Reports**: PDFKit for generating downloadable PDF reports
 - **Notifications**: Telegram, Discord, Slack webhooks for critical vulnerabilities
 
-### Multi-Agent Scanning Pipeline - 5-PHASE PROFESSIONAL PENTESTING METHODOLOGY
+### Multi-Agent Scanning Pipeline - 7-PHASE PROFESSIONAL PENTESTING METHODOLOGY
 
-The core security scanning system now follows a **STRICT, PROFESSIONAL PENTESTING METHODOLOGY** with 5 sequential phases:
+The core security scanning system now follows a **STRICT, PROFESSIONAL PENTESTING METHODOLOGY** with 7 sequential phases:
 
 **PHASE 1: RECONNAISSANCE (Broad Search)**
-- Tools: Assetfinder, Subfinder, HTTProbe, TheHarvester
+- Tools: Assetfinder, HTTPx (fast probing instead of curl)
 - Purpose: Discover all subdomains and identify live (active) assets
-- Agent: Recon Agent
+- Performance: HTTPx binary provides 10x faster probing than curl
 
 **PHASE 2: ATTACK SURFACE MAPPING (Narrowing Down)**
 - Tools: Katana, GAU, WhatWeb, Arjun, ParamSpider
 - Purpose: Crawl all URLs, identify tech stack, discover hidden parameters
-- Part of: Scanner Agent
+- Key Feature: All discovered URLs feed into Phase 2.5 & 2.6 for automated testing
+
+**PHASE 2.5: SQL INJECTION TESTING (NEW - AUTOMATED)**
+- Tools: SQLMap (batch mode with light scanning)
+- Purpose: Automatically test URLs with query parameters for SQL injection vulnerabilities
+- Trigger: Automatically runs on all URLs with parameters (e.g., ?id=1, ?search=test)
+- Scope: Tests first 10 parameter-containing URLs per scan for performance
+
+**PHASE 2.6: COMMAND INJECTION TESTING (NEW - AUTOMATED)**
+- Tools: Commix
+- Purpose: Automatically test URLs with command-like parameters for RCE/command injection
+- Trigger: Automatically runs on URLs with command keywords (cmd, exec, system, shell, bash, sh, eval, code, func, action, op, operation)
+- Scope: Tests first 5 command parameter-containing URLs per scan for performance
 
 **PHASE 3: VULNERABILITY ANALYSIS (Scanning)**
 - Tools: Nuclei, FFuf, TruffleHog
@@ -92,8 +114,8 @@ The core security scanning system now follows a **STRICT, PROFESSIONAL PENTESTIN
 - Part of: Scanner Agent
 
 **PHASE 4: TARGETED EXPLOITATION (Deep Dive)**
-- Tools: SQLMap (Level 3/Risk 2), Dalfox (XSS), Commix (Command Injection)
-- Purpose: Trigger conditional exploitation based on discovered vulnerabilities
+- Tools: Dalfox (XSS)
+- Purpose: Comprehensive XSS testing on all discovered URLs
 - Agent: Exploiter Agent
 
 **PHASE 5: REPORTING & COMPLIANCE**

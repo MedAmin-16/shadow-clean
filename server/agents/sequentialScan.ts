@@ -296,7 +296,7 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
 
       const sqlmapOutput = await executeCommand(
         scanData.scanId,
-        "sqlmap",
+        "/home/runner/workspace/bin/sqlmap",
         ["-u", url, "--batch", "--flush-session", "--random-agent", "--level=1", "--risk=1", "-q"],
         "SQLMAP"
       );
@@ -350,8 +350,8 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
 
       const commixOutput = await executeCommand(
         scanData.scanId,
-        "python3",
-        ["-m", "commix", "-u", url, "-q"],
+        "/home/runner/workspace/bin/commix",
+        ["-u", url, "-q"],
         "COMMIX"
       );
 
