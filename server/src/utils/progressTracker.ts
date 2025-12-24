@@ -8,6 +8,7 @@ export interface ProgressState {
   currentPhase: string;
   lastActivityTime: number;
   lastProgressReport: number;
+  phaseStartTime: number;
   heartbeatInterval?: NodeJS.Timeout;
 }
 
@@ -16,14 +17,16 @@ const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "
 let spinnerIndex = 0;
 
 export function initializeProgress(scanId: string, toolName: string, totalTargets: number, phase: string): ProgressState {
+  const now = Date.now();
   const state: ProgressState = {
     scanId,
     toolName,
     totalTargets,
     processedTargets: 0,
     currentPhase: phase,
-    lastActivityTime: Date.now(),
-    lastProgressReport: Date.now(),
+    lastActivityTime: now,
+    lastProgressReport: now,
+    phaseStartTime: now,
   };
 
   progressMap.set(scanId, state);
@@ -71,13 +74,38 @@ export function updateProgress(scanId: string, processed: number, lastFoundTarge
   }
 }
 
+function formatTime(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+function calculateETA(state: ProgressState): string {
+  if (state.processedTargets === 0) {
+    return "calculating...";
+  }
+
+  const elapsedTime = Date.now() - state.phaseStartTime;
+  const averageTimePerTarget = elapsedTime / state.processedTargets;
+  const remainingTargets = state.totalTargets - state.processedTargets;
+  const estimatedRemainingTime = remainingTargets * averageTimePerTarget;
+
+  return formatTime(estimatedRemainingTime);
+}
+
 function reportProgress(scanId: string, state: ProgressState): void {
   const progressPercent = Math.round((state.processedTargets / state.totalTargets) * 100);
   const barLength = 20;
   const filledLength = Math.round((progressPercent / 100) * barLength);
   const bar = "█".repeat(filledLength) + "░".repeat(barLength - filledLength);
 
-  const message = `[PROGRESS] ${state.currentPhase}: ${progressPercent}% [${bar}] (${state.processedTargets}/${state.totalTargets} targets)`;
+  const eta = calculateETA(state);
+  const message = `[PROGRESS] ${state.currentPhase}: ${progressPercent}% [${bar}] (ETA: ${eta})`;
   emitStdoutLog(scanId, message, {
     agentLabel: state.toolName,
     type: "progress",
@@ -101,8 +129,16 @@ export function completeProgress(scanId: string): void {
     clearInterval(state.heartbeatInterval);
   }
 
-  // Final progress report
-  reportProgress(scanId, state);
+  // Final progress report with completion message
+  const elapsedTime = Date.now() - state.phaseStartTime;
+  const timeString = formatTime(elapsedTime);
+  const completionMessage = `[COMPLETED] ${state.currentPhase} finished in ${timeString}`;
+  
+  emitStdoutLog(scanId, completionMessage, {
+    agentLabel: state.toolName,
+    type: "success",
+  });
+
   progressMap.delete(scanId);
 }
 
