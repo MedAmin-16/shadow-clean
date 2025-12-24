@@ -213,20 +213,24 @@ const vulnerabilityTemplates: VulnerabilityTemplate[] = [
   },
 ];
 
-// 10-Agent Swarm Configuration (AGENT-01 to AGENT-10)
-// Nuclei flags: -t /home/runner/nuclei-templates (templates path), -ni (no interaction), -duc (disable update check), -stats (show stats), -timeout 10 (sec per request), -retries 2
-// SQLMap flags: --batch (non-interactive), --flush-session (clear cache), --random-agent
+// 14-Agent Ultimate Pentesting Swarm (AGENT-01 to AGENT-14)
+// ELITE-EXCLUSIVE TOOLS: Dalfox (XSS), Commix (RCE), Arjun (Parameter Discovery)
+// PRO TOOLS: Katana (Crawling), Nuclei (CVE), SQLMap (SQL Injection)
 export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
-  "AGENT-02": { name: "Port Scanner", tool: "netstat", command: "netstat -tuln" },
-  "AGENT-03": { name: "Web Service Mapper", tool: "nikto", command: "nikto -h" },
+  "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
+  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -u" },
   "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
-  "AGENT-05": { name: "Exploitation Framework", tool: "metasploit", command: "msfvenom" },
-  "AGENT-06": { name: "API Security Analyzer", tool: "burp", command: "burpsuite --analyze" },
-  "AGENT-07": { name: "Cryptographic Weakness Detector", tool: "testssl", command: "testssl.sh" },
-  "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent -u" },
-  "AGENT-09": { name: "Access Control Validator", tool: "authorization-checker", command: "authz-check" },
-  "AGENT-10": { name: "Business Logic Auditor", tool: "business-logic-tester", command: "logic-test" },
+  "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -u" },
+  "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 -m commix -u" },
+  "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
+  "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent --level=3 --risk=2 -u" },
+  "AGENT-09": { name: "URL History Mining", tool: "waybackurls", command: "/home/runner/workspace/bin/waybackurls" },
+  "AGENT-10": { name: "HTTP Probing", tool: "httpprobe", command: "/home/runner/workspace/bin/httpprobe -c 50" },
+  "AGENT-11": { name: "Technology Detection", tool: "whatweb", command: "python3 -m whatweb -a 3" },
+  "AGENT-12": { name: "Directory Fuzzing", tool: "ffuf", command: "/home/runner/workspace/bin/ffuf -w /usr/share/wordlists/dirb/common.txt -u" },
+  "AGENT-13": { name: "Hidden Parameters", tool: "paramspider", command: "python3 -m paramspider -l" },
+  "AGENT-14": { name: "Archive History", tool: "gau", command: "/home/runner/workspace/bin/gau --subs" },
 };
 
 export async function runScannerAgent(
@@ -386,8 +390,8 @@ export async function runScannerAgent(
     agentLabel: "CONTROLLER"
   });
   
-  // Plan-based agent filtering: PRO = 7 agents, ELITE = 10 agents
-  const agentLimit = (planLevel as string) === "PRO" ? 7 : ((planLevel as string) === "ELITE" ? 10 : 7);
+  // Plan-based agent filtering: STANDARD = 4 agents, PRO = 10 agents, ELITE = 14 agents (ALL)
+  const agentLimit = (planLevel as string) === "STANDARD" ? 4 : ((planLevel as string) === "PRO" ? 10 : 14);
   const agentEntries = Object.entries(AGENT_SWARM).slice(0, agentLimit);
 
   // Agent Swarm Parallel Execution: Each agent tests all subdomains with PURE SPAWN()
@@ -427,6 +431,58 @@ export async function runScannerAgent(
           }
         } catch (error) {
           emitStdoutLog(scanId, `[${agentKey}] ⚠️ SQLMap execution error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+        }
+      } else if (agentKey === "AGENT-05") {
+        // ELITE-ONLY: Dalfox XSS Scanner
+        if (planLevel === "ELITE") {
+          try {
+            const args = agent.command.split(" ").concat([currentTarget]);
+            const output = await executeAgent(scanId, "/home/runner/workspace/bin/dalfox", args, agentKey);
+            if (output.match(/vulnerable|xss|injection/i)) {
+              const vuln: EnhancedVulnerability = {
+                id: `${agentKey}-xss-${Date.now()}`,
+                title: "Cross-Site Scripting (XSS) Vulnerability",
+                description: `XSS found via Dalfox advanced scanning.`,
+                severity: "high",
+                confidenceScore: 92,
+                owaspCategory: "A03:2021-Injection",
+                sansTop25: "CWE-79",
+                remediationCode: "Implement output encoding and CSP headers.",
+                port: 443,
+                service: "https",
+              };
+              agentVulns.push(vuln);
+              emitStdoutLog(scanId, `[${agentKey}] 🚨 [HIGH] XSS Vulnerability Detected via Dalfox`, { agentLabel: agentKey, type: "finding" });
+            }
+          } catch (error) {
+            emitStdoutLog(scanId, `[${agentKey}] Dalfox execution skipped or error`, { agentLabel: agentKey });
+          }
+        }
+      } else if (agentKey === "AGENT-06") {
+        // ELITE-ONLY: Commix Command Injection Tester
+        if (planLevel === "ELITE") {
+          try {
+            const args = agent.command.split(" ").concat([currentTarget]);
+            const output = await executeAgent(scanId, "python3", ["-m", "commix", "-u", currentTarget], agentKey);
+            if (output.match(/vulnerable|rce|command.*injection/i)) {
+              const vuln: EnhancedVulnerability = {
+                id: `${agentKey}-rce-${Date.now()}`,
+                title: "Remote Code Execution (RCE) Vulnerability",
+                description: `Command injection via Commix detection.`,
+                severity: "critical",
+                confidenceScore: 94,
+                owaspCategory: "A03:2021-Injection",
+                sansTop25: "CWE-78",
+                remediationCode: "Use secure command execution APIs and input validation.",
+                port: 443,
+                service: "https",
+              };
+              agentVulns.push(vuln);
+              emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] RCE Vulnerability Detected via Commix`, { agentLabel: agentKey, type: "finding" });
+            }
+          } catch (error) {
+            emitStdoutLog(scanId, `[${agentKey}] Commix execution skipped or error`, { agentLabel: agentKey });
+          }
         }
       } else if (agentKey === "AGENT-04") {
         // Nuclei: -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
