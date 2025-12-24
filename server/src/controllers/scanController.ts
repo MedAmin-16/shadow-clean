@@ -2,7 +2,7 @@ import type { Response } from "express";
 import type { AuthenticatedRequest, ScanJobData } from "../types";
 import { storage } from "../../storage";
 import { insertScanSchema } from "@shared/schema";
-import { runAgentPipeline } from "../../agents";
+import { runSequentialScan } from "../../agents/sequentialScan";
 import { addScanJob, getJobStatus, getScanQueue } from "../queues/scanQueue";
 import { getReportByJobId, getReportsByUser, generatePdfReport, getPdfPath, createReport } from "../services/reportService";
 import { emitScanCompleted, emitInfoLog, emitStdoutLog } from "../sockets/socketManager";
@@ -63,7 +63,7 @@ export async function startScan(req: AuthenticatedRequest, res: Response): Promi
           emitStdoutLog(scanId, `[REAL-TIME]: Testing security vulnerabilities...`);
           process.stdout.write(`[PIPELINE_START] ${scanId} execution beginning\n`);
           
-          await runAgentPipeline(scanId);
+          await runSequentialScan(scanId, scanTarget);
           const completedScan = await storage.getScan(scanId);
           
           if (completedScan) {

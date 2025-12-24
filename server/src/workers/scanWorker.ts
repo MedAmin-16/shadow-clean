@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq";
 import type { ScanJobData } from "../types";
 import { createLogger } from "../utils/logger";
-import { runAgentPipeline } from "../../agents";
+import { runSequentialScan } from "../../agents/sequentialScan";
 import { storage } from "../../storage";
 import { emitScanCompleted } from "../sockets/socketManager";
 import { sendScanCompletedEmail } from "../services/emailService";
@@ -33,7 +33,7 @@ export async function initScanWorker(): Promise<Worker<ScanJobData> | null> {
           await storage.updateScan(jobId, { status: "running" });
 
           await job.updateProgress(20);
-          await runAgentPipeline(jobId);
+          await runSequentialScan(jobId, target);
 
           await job.updateProgress(90);
           const scan = await storage.getScan(jobId);
