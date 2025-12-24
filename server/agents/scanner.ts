@@ -187,7 +187,7 @@ Provide ONLY the code fix (no explanation). Be brief, 2-5 lines max.`;
     }
     return "Fix generation failed";
   } catch (error) {
-    console.error("Remediation generation error:", error);
+    logError("REMEDIATION", `Generation failed: ${error instanceof Error ? error.message : "unknown error"}`);
     return "See remediation code template";
   }
 }
@@ -273,6 +273,10 @@ export async function runScannerAgent(
   const planLevel = options?.planLevel || "STANDARD";
   const userId = options?.userId || "unknown";
   const findings: EnhancedVulnerability[] = [];
+  
+  // Print the gradient banner at the very beginning
+  const bannerText = createBanner("ELITE-SCANNER");
+  console.log(gradient.rainbow(bannerText));
   
   // ✨ PRO PACK: ULTIMATE VERSION WITH ALL 14 AGENTS
   // MERGED: All ELITE capabilities now in PRO (Dalfox, Commix, TruffleHog, RL Exploiter, Prophet, etc.)

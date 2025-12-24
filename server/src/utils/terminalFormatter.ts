@@ -64,20 +64,21 @@ function getTimestamp(): string {
  * Create ASCII art banner with neon gradient effect
  */
 export function createBanner(toolName: string = "ELITE-SCANNER"): string {
+  const neonCyan = (text: string) => `${ANSI.CYAN}${ANSI.BOLD}${text}${ANSI.RESET}`;
   const banner = `
-${colors.neonCyan("╔════════════════════════════════════════════════════════════════════════════╗")}
-${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${neonCyan("╔════════════════════════════════════════════════════════════════════════════╗")}
+${neonCyan("║")}                                                                            ${neonCyan("║")}
 ${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
 ${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
-${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
-${colors.neonCyan("║")}  ${colors.neonGreen(toolName.padStart(Math.floor((70 + toolName.length) / 2)).padEnd(70))}  ${colors.neonCyan("║")}
-${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${neonCyan("║")}                                                                            ${neonCyan("║")}
+${neonCyan("║")}  ${colors.neonGreen(toolName.padStart(Math.floor((70 + toolName.length) / 2)).padEnd(70))}  ${neonCyan("║")}
+${neonCyan("║")}                                                                            ${neonCyan("║")}
 ${colors.neonGreen("║  Modern Security Scanner | Multi-Agent Reconnaissance Engine              ║")}
-${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${neonCyan("║")}                                                                            ${neonCyan("║")}
 ${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
 ${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
-${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
-${colors.neonCyan("╚════════════════════════════════════════════════════════════════════════════╝")}`;
+${neonCyan("║")}                                                                            ${neonCyan("║")}
+${neonCyan("╚════════════════════════════════════════════════════════════════════════════╝")}`;
   return banner;
 }
 
@@ -192,6 +193,7 @@ export function createFinalReport(
   duration: number
 ): string {
   const durationSec = (duration / 1000).toFixed(2);
+  const neonCyan = (text: string) => `${ANSI.CYAN}${ANSI.BOLD}${text}${ANSI.RESET}`;
   
   const report = `
 ${colors.neonGreen("════════════════════════════════════════════════════════════════════════════")}
@@ -223,6 +225,3 @@ export function createProgressLine(current: number, total: number, label: string
   const bar = colors.neonGreen("█".repeat(filledLength)) + colors.darkGray("░".repeat(emptyLength));
   return `${label}: ${bar} ${percentage}% (${current}/${total})`;
 }
-
-// Helper function for cyan color (was neonCyan)
-const neonCyan = (text: string) => `${ANSI.CYAN}${ANSI.BOLD}${text}${ANSI.RESET}`;
