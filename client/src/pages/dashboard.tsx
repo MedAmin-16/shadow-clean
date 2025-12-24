@@ -18,6 +18,7 @@ import { LiveScanWidget } from "@/components/LiveScanWidget";
 import { VulnerabilityCard } from "@/components/VulnerabilityCard";
 import { ProphetAISection } from "@/components/ProphetAISection";
 import { PlanBadge } from "@/components/PlanBadge";
+import { ScanResultsPage } from "@/components/ScanResultsPage";
 
 interface DashboardMetrics {
   securityScore: number;
@@ -35,6 +36,13 @@ interface Vulnerability {
   severity: "critical" | "high" | "medium" | "low" | "info";
   project: string;
   date: string;
+  cvss?: number;
+  url?: string;
+  payload?: string;
+  responseSnippet?: string;
+  remediationCode?: string;
+  description?: string;
+  tool?: string;
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -137,6 +145,14 @@ export default function DashboardPage() {
     severity: v.severity,
     affectedAsset: v.project,
     cveId: undefined,
+    cvss: v.cvss,
+    url: v.url,
+    payload: v.payload,
+    responseSnippet: v.responseSnippet,
+    remediationCode: v.remediationCode,
+    description: v.description,
+    tool: v.tool,
+    timestamp: v.date,
   }));
 
   return (
