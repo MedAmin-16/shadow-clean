@@ -378,13 +378,29 @@ export async function runScannerAgent(
     emitStdoutLog(scanId, `[DEEP-SCAN] Professional scan complete: ${findings.length} findings identified`, { agentLabel: "SCANNER" });
     emitStdoutLog(scanId, `[DEEP-SCAN] ═══════════════════════════════════════`, { agentLabel: "SCANNER" });
     
+    // JavaScript Set Deduplication - Remove duplicate findings
+    const seenVulnerabilities = new Set<string>();
+    const deduplicatedFindings = findings.filter((vuln) => {
+      const key = `${vuln.title}|${vuln.severity}|${vuln.cve || ""}`;
+      if (seenVulnerabilities.has(key)) {
+        return false;
+      }
+      seenVulnerabilities.add(key);
+      return true;
+    });
+    
+    const dedupCount = findings.length - deduplicatedFindings.length;
+    if (dedupCount > 0) {
+      emitStdoutLog(scanId, `[DEDUP] Removed ${dedupCount} duplicate finding(s), ${deduplicatedFindings.length} unique findings remain`, { agentLabel: "SCANNER", type: "info" });
+    }
+    
     return {
-      vulnerabilities: findings,
+      vulnerabilities: deduplicatedFindings,
       apiEndpoints: [],
       technologies: [],
-      totalFindings: findings.length,
-      criticalCount: findings.filter(f => f.severity === "critical").length,
-      highCount: findings.filter(f => f.severity === "high").length,
+      totalFindings: deduplicatedFindings.length,
+      criticalCount: deduplicatedFindings.filter(f => f.severity === "critical").length,
+      highCount: deduplicatedFindings.filter(f => f.severity === "high").length,
       decisionLog: [],
       agentResults: {},
     };
@@ -587,15 +603,23 @@ export async function runScannerAgent(
     emitStdoutLog(scanId, `${'─'.repeat(80)}\n`, { agentLabel: "CONTROLLER" });
   }
 
-  // Deduplicate vulnerabilities by title and target
-  const deduplicatedMap = new Map<string, EnhancedVulnerability>();
+  // JavaScript Set Deduplication - Remove duplicate vulnerabilities
+  const seenVulnKeys = new Set<string>();
+  const uniqueVulnerabilities: EnhancedVulnerability[] = [];
+  
   for (const vuln of findings) {
-    const key = `${vuln.title}-${vuln.port || 0}`;
-    if (!deduplicatedMap.has(key) || (deduplicatedMap.get(key)?.confidenceScore || 0) < (vuln.confidenceScore || 0)) {
-      deduplicatedMap.set(key, vuln);
+    const key = `${vuln.title}|${vuln.severity}|${vuln.port || 0}`;
+    if (!seenVulnKeys.has(key)) {
+      seenVulnKeys.add(key);
+      uniqueVulnerabilities.push(vuln);
     }
   }
-  const deduplicatedFindings = Array.from(deduplicatedMap.values());
+  
+  const deduplicatedFindings = uniqueVulnerabilities;
+  const removedDups = findings.length - deduplicatedFindings.length;
+  if (removedDups > 0) {
+    emitStdoutLog(scanId, `[DEDUP] Removed ${removedDups} duplicate finding(s), ${deduplicatedFindings.length} unique findings remain`, { agentLabel: "CONTROLLER", type: "info" });
+  }
 
   emitStdoutLog(scanId, `[SCAN] Complete: ${deduplicatedFindings.length} unique vulnerabilities identified`, { 
     agentLabel: "CONTROLLER" 
