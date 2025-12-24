@@ -31,6 +31,7 @@ import {
   emitErrorLog,
 } from "../src/sockets/socketManager";
 import { spawn } from "child_process";
+import { writeFileSync, readFileSync, unlinkSync } from "fs";
 
 export { runStealthExploiterAgent } from "./stealthExploiter";
 
@@ -79,6 +80,7 @@ const TOOL_PATHS = {
   sqlmap: "/home/runner/workspace/bin/sqlmap",
   dalfox: "/home/runner/workspace/bin/dalfox",
   commix: "/home/runner/workspace/bin/commix",
+  anew: "/home/runner/workspace/bin/anew",
 };
 
 const NUCLEI_TEMPLATES = "/home/runner/workspace/nuclei-templates";
@@ -227,9 +229,30 @@ async function phase1SubdomainDiscovery(
       emitWarningLog(scanId, `[PHASE 1] Assetfinder stderr: ${assetfinderResult.stderr.substring(0, 200)}`);
     }
 
-    // Merge and deduplicate
-    const allDomains = Array.from(new Set([...subfinderDomains, ...assetfinderDomains]));
-    emitStdoutLog(scanId, `[PHASE 1] Merged results: ${allDomains.length} unique domains total`);
+    // Merge and deduplicate with anew
+    const mergedDomains = [...subfinderDomains, ...assetfinderDomains];
+    const rawDomainsFile = `/tmp/phase1_raw_${scanId}.txt`;
+    const dedupDomainsFile = `/tmp/phase1_dedup_${scanId}.txt`;
+    
+    writeFileSync(rawDomainsFile, mergedDomains.join("\n"));
+    
+    let allDomains: string[];
+    try {
+      await executeTool(TOOL_PATHS.anew, [dedupDomainsFile], mergedDomains.join("\n"));
+      allDomains = readFileSync(dedupDomainsFile, "utf-8")
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
+      
+      const dedupCount = mergedDomains.length - allDomains.length;
+      emitStdoutLog(scanId, `[PHASE 1] 🔄 Anew deduplication: ${mergedDomains.length} domains → ${allDomains.length} unique (removed ${dedupCount} duplicates)`);
+      
+      unlinkSync(rawDomainsFile);
+      unlinkSync(dedupDomainsFile);
+    } catch (anewErr) {
+      emitWarningLog(scanId, `[PHASE 1] Anew deduplication failed, using standard Set deduplication`);
+      allDomains = Array.from(new Set(mergedDomains));
+      try { unlinkSync(rawDomainsFile); } catch (e) {}
+    }
 
     // ===== HTTPPROBE (with 2-min timeout) =====
     if (allDomains.length === 0) {
@@ -310,11 +333,33 @@ async function phase2UrlCapture(
 
     emitStdoutLog(scanId, `  GAU found: ${gauUrls.length} URLs`);
 
-    // Merge URLs
-    const allUrls = Array.from(new Set([...katanaUrls, ...gauUrls]));
-    scanData.urls.set(subdomain, allUrls);
+    // Merge URLs and deduplicate with anew
+    const mergedUrls = [...katanaUrls, ...gauUrls];
+    const rawUrlsFile = `/tmp/phase2_raw_${subdomain}_${Date.now()}.txt`;
+    const dedupUrlsFile = `/tmp/phase2_dedup_${subdomain}_${Date.now()}.txt`;
+    
+    writeFileSync(rawUrlsFile, mergedUrls.join("\n"));
+    
+    try {
+      await executeTool(TOOL_PATHS.anew, [dedupUrlsFile], mergedUrls.join("\n"));
+      const allUrls = readFileSync(dedupUrlsFile, "utf-8")
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
+      
+      const dedupCount = mergedUrls.length - allUrls.length;
+      emitStdoutLog(scanId, `  🔄 Anew deduplication: ${mergedUrls.length} URLs → ${allUrls.length} unique (removed ${dedupCount} duplicates)`);
+      
+      scanData.urls.set(subdomain, allUrls);
+      unlinkSync(rawUrlsFile);
+      unlinkSync(dedupUrlsFile);
+    } catch (anewError) {
+      emitWarningLog(scanId, `  Anew deduplication failed, using standard deduplication`);
+      const allUrls = Array.from(new Set(mergedUrls));
+      scanData.urls.set(subdomain, allUrls);
+      try { unlinkSync(rawUrlsFile); } catch (e) {}
+    }
 
-    emitStdoutLog(scanId, `  ✅ PHASE 2 Complete: ${allUrls.length} unique URLs collected`);
+    emitStdoutLog(scanId, `  ✅ PHASE 2 Complete: ${scanData.urls.get(subdomain)?.length || 0} unique URLs collected`);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     emitWarningLog(scanId, `PHASE 2 ERROR for ${subdomain}: ${errorMsg}`);
