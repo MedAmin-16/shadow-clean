@@ -597,6 +597,26 @@ export async function runScannerAgent(
         } catch (error) {
           emitStdoutLog(scanId, `[${agentKey}] ⚠️ HTTP probe error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
         }
+      } else if (agentKey === "AGENT-10") {
+        // HTTP Probing with native Node.js function - filters assetfinder results - SKIP ON ERROR
+        try {
+          emitStdoutLog(scanId, `[${agentKey}] Starting native Node.js HTTP probe on ${currentTarget}...`, { agentLabel: agentKey, type: "info" });
+          const probeResult = await probeHttpTarget(scanId, currentTarget, agentKey);
+          
+          if (probeResult.reachable) {
+            emitStdoutLog(scanId, `[${agentKey}] ✓ LIVE DOMAIN CONFIRMED: ${currentTarget} (HTTP ${probeResult.statusCode})`, { 
+              agentLabel: agentKey,
+              type: "success"
+            });
+          } else {
+            emitStdoutLog(scanId, `[${agentKey}] ✗ Domain unreachable: ${currentTarget}`, { 
+              agentLabel: agentKey,
+              type: "info"
+            });
+          }
+        } catch (error) {
+          emitStdoutLog(scanId, `[${agentKey}] ⚠️ HTTP probe error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+        }
       }
       
       findings.push(...agentVulns);
