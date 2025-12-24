@@ -4,7 +4,6 @@ import { tmpdir } from "os";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
 import {
   createBanner,
-  createPhaseBox,
   logPhaseInfo,
   logToolExecution,
   logFinding,
@@ -17,6 +16,7 @@ import {
   icons,
   colors,
 } from "../src/utils/terminalFormatter";
+import { filterToolOutput } from "../src/utils/toolOutputFilter";
 
 /**
  * FULL DOMAIN-WIDE ENGINE - GLOBAL PHASE-BASED EXECUTION
@@ -65,7 +65,6 @@ function executeCommand(
       const text = data.toString();
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
-        emitStdoutLog(scanId, `[${phaseName}] ${line}`, { agentLabel: phaseName });
         output.push(line);
       });
     });
@@ -147,9 +146,15 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
       const httpxOutput = await executeCommand(
         scanData.scanId,
         "/home/runner/workspace/bin/httpx",
-        ["-l", httpxInputFile, "-status-code", "-follow-redirects"],
+        ["-l", httpxInputFile, "-status-code", "-follow-redirects", "-silent"],
         "HTTPX"
       );
+      
+      // Filter output to show only important info
+      const filteredHttpx = filterToolOutput("httpx", httpxOutput, "HTTPX");
+      filteredHttpx.importantLines.forEach(line => {
+        emitStdoutLog(scanData.scanId, line, { agentLabel: "HTTPX" });
+      });
       
       const liveSubdomains = httpxOutput
         .split("\n")
@@ -223,6 +228,12 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
       ["-list", subdomainsFile, "-c", "3", "-d", "3", "-ps", "-system-chromium", "--headless", "--no-sandbox"],
       "KATANA-GLOBAL"
     );
+
+    // Filter katana output - show progress + summary only
+    const filteredKatana = filterToolOutput("katana", katanaOutput, "KATANA");
+    filteredKatana.importantLines.forEach(line => {
+      emitStdoutLog(scanData.scanId, line, { agentLabel: "KATANA" });
+    });
 
     // Parse URLs from output
     const allUrls = katanaOutput
@@ -313,6 +324,12 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
         "SQLMAP"
       );
 
+      // Filter output to show only findings
+      const filteredSqlmap = filterToolOutput("sqlmap", sqlmapOutput, "SQLMAP");
+      filteredSqlmap.importantLines.forEach(line => {
+        emitStdoutLog(scanData.scanId, line, { agentLabel: "SQLMAP" });
+      });
+
       if (sqlmapOutput.toLowerCase().includes("vulnerable") || sqlmapOutput.toLowerCase().includes("injectable")) {
         scanData.vulnerabilities.push({
           title: "SQL Injection Vulnerability",
@@ -365,6 +382,12 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
         ["-u", url, "-q"],
         "COMMIX"
       );
+
+      // Filter output to show only findings
+      const filteredCommix = filterToolOutput("commix", commixOutput, "COMMIX");
+      filteredCommix.importantLines.forEach(line => {
+        emitStdoutLog(scanData.scanId, line, { agentLabel: "COMMIX" });
+      });
 
       if (commixOutput.toLowerCase().includes("vulnerable") || commixOutput.toLowerCase().includes("rce") || commixOutput.toLowerCase().includes("injection")) {
         scanData.vulnerabilities.push({
@@ -427,6 +450,12 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       "NUCLEI-GLOBAL"
     );
 
+    // Filter nuclei output - show only high/critical findings
+    const filteredNuclei = filterToolOutput("nuclei", nucleiOutput, "NUCLEI");
+    filteredNuclei.importantLines.forEach(line => {
+      emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI" });
+    });
+
     // Parse Nuclei JSON output
     let findingsCount = 0;
     nucleiOutput.split("\n").forEach(line => {
@@ -435,24 +464,26 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
           const finding = JSON.parse(line);
           const subdomain = scanData.subdomains.find(sub => finding.host?.includes(sub) || finding.matched_at?.includes(sub));
           
-          scanData.vulnerabilities.push({
-            subdomain: subdomain || finding.host,
-            title: finding.name || "Unknown Nuclei Finding",
-            severity: finding.severity || "medium",
-            templateId: finding["template-id"],
-            url: finding.matched_at || "N/A",
-            type: "nuclei"
-          });
-          
-          if (subdomain) {
-            const meta = scanData.subdomainMetadata.get(subdomain);
-            if (meta) {
-              meta.vulnerabilityCount = (meta.vulnerabilityCount || 0) + 1;
+          // Only log high/critical findings
+          if (finding.severity && !finding.severity.match(/low|medium/i)) {
+            scanData.vulnerabilities.push({
+              subdomain: subdomain || finding.host,
+              title: finding.name || "Unknown Nuclei Finding",
+              severity: finding.severity || "medium",
+              templateId: finding["template-id"],
+              url: finding.matched_at || "N/A",
+              type: "nuclei"
+            });
+            
+            if (subdomain) {
+              const meta = scanData.subdomainMetadata.get(subdomain);
+              if (meta) {
+                meta.vulnerabilityCount = (meta.vulnerabilityCount || 0) + 1;
+              }
             }
+            
+            findingsCount++;
           }
-          
-          findingsCount++;
-          emitStdoutLog(scanData.scanId, `[PHASE 3] 🔍 Finding: ${finding.name} (${finding.severity})`, { agentLabel: "PHASE-3" });
         } catch {
           // Skip unparseable lines
         }
@@ -605,7 +636,13 @@ export async function runSequentialScan(
 
     // Final summary with professional table and report
     const duration = Date.now() - startTime;
-    const reportText = createFinalReport(target, scanData, duration);
+    const reportText = createFinalReport(target, {
+      subdomains: scanData.subdomains,
+      totalUrls: scanData.urls.length,
+      vulnerabilities: scanData.vulnerabilities,
+      errors: scanData.errors,
+      metadata: Object.fromEntries(scanData.subdomainMetadata)
+    }, duration);
     emitStdoutLog(scanId, reportText, { agentLabel: "SEQUENTIAL-SCAN" });
 
     return {
