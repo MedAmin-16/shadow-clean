@@ -126,14 +126,26 @@ async function executeAgent(
       });
     });
     
-    // Stream stderr IMMEDIATELY with [DEBUG] prefix
+    // Stream stderr IMMEDIATELY with [DEBUG] prefix - FILTER OUT NON-CRITICAL MESSAGES
     child.stderr?.on("data", (data: Buffer) => {
       const text = data.toString();
       const lines = text.split("\n");
       
       lines.forEach((line: string) => {
         if (line.trim()) {
-          emitStdoutLog(scanId, `[DEBUG] ${line}`, { agentLabel, type: "stderr" });
+          // Ignore non-critical messages from tools (version info, banners, info logs)
+          const isCritical = line.includes("FATAL") || line.includes("ERROR");
+          const isIgnored = line.includes("projectdiscovery") || line.includes("version") || line.includes(" INF ");
+          
+          if (isCritical || !isIgnored) {
+            // Only log if it's critical OR doesn't match ignored keywords
+            if (isCritical) {
+              emitStdoutLog(scanId, `[ERROR] ${line}`, { agentLabel, type: "stderr" });
+            } else if (!line.includes("projectdiscovery") && !line.includes("version")) {
+              // Log other stderr but not the noisy ones
+              emitStdoutLog(scanId, `[DEBUG] ${line}`, { agentLabel, type: "stderr" });
+            }
+          }
         }
       });
     });
@@ -245,14 +257,14 @@ const vulnerabilityTemplates: VulnerabilityTemplate[] = [
 export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
-  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -system-chromium --headless --no-sandbox -u" },
-  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
+  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -system-chromium --headless --no-sandbox -silent -u" },
+  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -duc -silent -timeout 10 -retries 2 -u" },
   "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -u" },
   "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 -m commix -u" },
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
   "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent --level=3 --risk=2 -u" },
   "AGENT-09": { name: "URL History Mining", tool: "waybackurls", command: "/home/runner/workspace/bin/waybackurls" },
-  "AGENT-10": { name: "HTTP Probing", tool: "httpprobe", command: "/home/runner/workspace/bin/httpprobe -c 50" },
+  "AGENT-10": { name: "HTTP Probing", tool: "httpprobe", command: "/home/runner/workspace/bin/httpprobe -c 50 -silent" },
   "AGENT-11": { name: "Technology Detection", tool: "whatweb", command: "python3 -m whatweb -a 3" },
   "AGENT-12": { name: "Directory Fuzzing", tool: "ffuf", command: "/home/runner/workspace/bin/ffuf -w /usr/share/wordlists/dirb/common.txt -u" },
   "AGENT-13": { name: "Hidden Parameters", tool: "paramspider", command: "python3 -m paramspider -l" },
@@ -273,6 +285,23 @@ export async function runScannerAgent(
   const planLevel = options?.planLevel || "STANDARD";
   const userId = options?.userId || "unknown";
   const findings: EnhancedVulnerability[] = [];
+  
+  // FORCE PRINT: Show the ASCII banner at the very beginning (immediate console output, no buffering)
+  console.log("\n");
+  console.log("╔════════════════════════════════════════════════════════════════════════════╗");
+  console.log("║                                                                            ║");
+  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
+  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
+  console.log("║                                                                            ║");
+  console.log("║         🎯 ELITE-SCANNER - MULTI-AGENT RECONNAISSANCE ENGINE 🎯         ║");
+  console.log("║                                                                            ║");
+  console.log("║  Modern Security Scanner | Multi-Agent Reconnaissance Engine              ║");
+  console.log("║                                                                            ║");
+  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
+  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
+  console.log("║                                                                            ║");
+  console.log("╚════════════════════════════════════════════════════════════════════════════╝");
+  console.log("\n");
   
   // Print the gradient banner at the very beginning
   const bannerText = createBanner("ELITE-SCANNER");
