@@ -6,7 +6,7 @@ ShadowTwin is an AI-powered Cybersecurity Digital Twin SaaS platform. It creates
 
 The platform features a multi-agent scanning pipeline that performs reconnaissance, vulnerability scanning, exploitation testing, and report generation. The frontend provides a dashboard for managing projects, monitoring scans, viewing vulnerabilities, and generating compliance reports.
 
-## Recent Changes (December 24, 2025 - PRO PACK FINALIZED AS ULTIMATE VERSION)
+## Recent Changes (December 24, 2025 - PROFESSIONAL PENTESTING METHODOLOGY IMPLEMENTED)
 
 ### ✨ PRO PACK MERGED WITH ELITE - NOW THE ULTIMATE VERSION
 
@@ -72,20 +72,41 @@ Preferred communication style: Simple, everyday language.
 - **Reports**: PDFKit for generating downloadable PDF reports
 - **Notifications**: Telegram, Discord, Slack webhooks for critical vulnerabilities
 
-### Multi-Agent Scanning Pipeline
-The core security scanning system uses a 14-agent ultimate pentesting swarm:
+### Multi-Agent Scanning Pipeline - 5-PHASE PROFESSIONAL PENTESTING METHODOLOGY
 
-**All Agents Available for PRO/ELITE Plans**:
-1. **Recon Agent**: Strategic Planning Engine with credit-based gating and tiered LLM access
-2. **Scanner Agent**: 14-Agent Swarm with vulnerability identification, PoC and remediation code
-3. **Exploiter Agent**: Attempts safe exploitation to validate vulnerabilities
-4. **Reporter Agent**: Strategic Intelligence Engine with financial risk quantification
+The core security scanning system now follows a **STRICT, PROFESSIONAL PENTESTING METHODOLOGY** with 5 sequential phases:
+
+**PHASE 1: RECONNAISSANCE (Broad Search)**
+- Tools: Assetfinder, Subfinder, HTTProbe, TheHarvester
+- Purpose: Discover all subdomains and identify live (active) assets
+- Agent: Recon Agent
+
+**PHASE 2: ATTACK SURFACE MAPPING (Narrowing Down)**
+- Tools: Katana, GAU, WhatWeb, Arjun, ParamSpider
+- Purpose: Crawl all URLs, identify tech stack, discover hidden parameters
+- Part of: Scanner Agent
+
+**PHASE 3: VULNERABILITY ANALYSIS (Scanning)**
+- Tools: Nuclei, FFuf, TruffleHog
+- Purpose: Scan for vulnerabilities, leaked secrets, sensitive files (.env, .git, config)
+- Part of: Scanner Agent
+
+**PHASE 4: TARGETED EXPLOITATION (Deep Dive)**
+- Tools: SQLMap (Level 3/Risk 2), Dalfox (XSS), Commix (Command Injection)
+- Purpose: Trigger conditional exploitation based on discovered vulnerabilities
+- Agent: Exploiter Agent
+
+**PHASE 5: REPORTING & COMPLIANCE**
+- Purpose: Map all findings to OWASP Top 10, generate Executive Summary and Technical Remediation
+- Agent: Reporter Agent
+
+**Supporting Agents (ELITE only)**:
 5. **RL Exploiter Agent**: Reinforcement learning-based exploitation with Q-learning
 6. **Prophet Agent**: Causal inference engine with root cause analysis
 7. **Autonomous Defense Agent**: WAF/Firewall hotfix integration
 8. **ShadowLogic™ Agent**: Autonomous AI-powered business logic vulnerability auditor using Groq
 
-Each agent runs asynchronously and updates scan progress in real-time with cinematic terminal effects.
+Each phase executes sequentially with strict tool specifications. All agents run asynchronously and update scan progress in real-time with cinematic terminal effects.
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect

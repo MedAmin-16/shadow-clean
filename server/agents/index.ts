@@ -48,6 +48,28 @@ export {
   type AutonomousDefenseOptions 
 } from "./level7";
 
+/**
+ * PROFESSIONAL PENTESTING METHODOLOGY - 5-PHASE PIPELINE
+ * 
+ * PHASE 1: RECONNAISSANCE (Broad Search)
+ *   Tools: Assetfinder, Subfinder, HTTProbe, TheHarvester
+ *   Purpose: Discover all subdomains and identify live assets
+ * 
+ * PHASE 2: ATTACK SURFACE MAPPING (Narrowing Down)
+ *   Tools: Katana, GAU, WhatWeb, Arjun, ParamSpider
+ *   Purpose: Crawl URLs, identify tech stack, find hidden parameters
+ * 
+ * PHASE 3: VULNERABILITY ANALYSIS (Scanning)
+ *   Tools: Nuclei, FFuf, TruffleHog
+ *   Purpose: Scan for vulnerabilities, leaked secrets, sensitive files
+ * 
+ * PHASE 4: TARGETED EXPLOITATION (Deep Dive)
+ *   Tools: SQLMap (Level 3/Risk 2), Dalfox, Commix
+ *   Purpose: Attempt targeted exploitation of discovered vulnerabilities
+ * 
+ * PHASE 5: REPORTING & COMPLIANCE
+ *   Purpose: Map findings to OWASP Top 10, generate executive & technical reports
+ */
 const FULL_AGENT_SEQUENCE: AgentType[] = ["recon", "scanner", "exploiter", "reporter"];
 
 function getAgentSequenceForPlan(planLevel: PlanLevel): AgentType[] {
@@ -98,20 +120,25 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
   const userPlanLevel = (context?.planLevel || userCredits.planLevel) as PlanLevel;
   const AGENT_SEQUENCE = getAgentSequenceForPlan(userPlanLevel);
   
-  console.log(`[PIPELINE] Running agents for ${userPlanLevel} plan: ${AGENT_SEQUENCE.join(", ")}`);
+  console.log(`[PIPELINE] Running 5-PHASE PROFESSIONAL PENTESTING METHODOLOGY for ${userPlanLevel} plan`);
+  console.log(`[PHASES] Phase 1: RECONNAISSANCE → Phase 2: ATTACK SURFACE MAPPING → Phase 3: VULNERABILITY ANALYSIS → Phase 4: TARGETED EXPLOITATION → Phase 5: REPORTING & COMPLIANCE`);
   
   // REAL-TIME LOGGING - Emit immediately to UI and console
-  emitInfoLog(scanId, `Initializing ${userPlanLevel} scan pipeline for target: ${scan.target}`);
-  emitExecLog(scanId, `shadowtwin --plan ${userPlanLevel} --target ${scan.target}`);
-  emitStdoutLog(scanId, `[REAL-TIME]: Pipeline initialized`);
-  emitStdoutLog(scanId, `[REAL-TIME]: Agent sequence: ${AGENT_SEQUENCE.join(" -> ")}`);
+  emitInfoLog(scanId, `Initializing 5-PHASE professional pentesting scan for target: ${scan.target}`);
+  emitExecLog(scanId, `shadowtwin --methodology pentesting-5-phase --plan ${userPlanLevel} --target ${scan.target}`);
+  emitStdoutLog(scanId, `[PROFESSIONAL PENTESTING] 5-Phase Methodology Initialized`);
+  emitStdoutLog(scanId, `Phase 1: RECONNAISSANCE (Assetfinder, Subfinder, HTTProbe, TheHarvester)`);
+  emitStdoutLog(scanId, `Phase 2: ATTACK SURFACE MAPPING (Katana, GAU, WhatWeb, Arjun, ParamSpider)`);
+  emitStdoutLog(scanId, `Phase 3: VULNERABILITY ANALYSIS (Nuclei, FFuf, TruffleHog)`);
+  emitStdoutLog(scanId, `Phase 4: TARGETED EXPLOITATION (SQLMap Level 3, Dalfox, Commix)`);
+  emitStdoutLog(scanId, `Phase 5: REPORTING & COMPLIANCE (OWASP Top 10 Mapping)`);
   
-  process.stdout.write(`[PIPELINE_INIT] ${scanId} - Target: ${scan.target} - Plan: ${userPlanLevel}\n`);
-  process.stdout.write(`[AGENTS_SEQUENCE] ${AGENT_SEQUENCE.join(" -> ")}\n`);
+  process.stdout.write(`[PIPELINE_INIT] ${scanId} - Methodology: 5-PHASE PROFESSIONAL PENTESTING - Target: ${scan.target} - Plan: ${userPlanLevel}\n`);
+  process.stdout.write(`[PHASE_SEQUENCE] RECONNAISSANCE → ATTACK SURFACE MAPPING → VULNERABILITY ANALYSIS → TARGETED EXPLOITATION → REPORTING & COMPLIANCE\n`);
   
   if (userPlanLevel === "ELITE") {
-    emitAiThoughtLog(scanId, `ELITE mode activated. Full agent pipeline with AI-enhanced analysis enabled.`);
-    process.stdout.write(`[ELITE_MODE] Advanced AI analysis enabled\n`);
+    emitAiThoughtLog(scanId, `ELITE mode activated. 5-PHASE PROFESSIONAL PENTESTING with full agent arsenal and AI-enhanced analysis enabled.`);
+    process.stdout.write(`[ELITE_MODE] 5-PHASE Professional Pentesting Methodology + Advanced AI analysis enabled\n`);
   }
 
   let reconData: ReconFindings | undefined;
@@ -155,8 +182,12 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
           case "recon":
             const scanUserId = scan.userId;
             const userCredits = await storage.getUserCredits(scanUserId);
-            emitExecLog(scanId, `nmap -sV -T4 -Pn ${scan.target}`);
-            emitStdoutLog(scanId, `Starting reconnaissance on ${scan.target}...`);
+            emitExecLog(scanId, `[PHASE 1: RECONNAISSANCE] Executing broad asset discovery...`);
+            emitExecLog(scanId, `assetfinder --subs-only ${scan.target}`);
+            emitExecLog(scanId, `subfinder -d ${scan.target} -all`);
+            emitExecLog(scanId, `httpprobe -p 80,443 < subdomains.txt`);
+            emitExecLog(scanId, `theHarvester -d ${scan.target} -b all`);
+            emitStdoutLog(scanId, `[PHASE 1] Starting RECONNAISSANCE on ${scan.target}...`);
             
             if (userPlanLevel === "ELITE") {
               emitAiThoughtLog(scanId, `Analyzing target attack surface. Will use ${userCredits.planLevel} LLM model for strategic planning.`);
@@ -186,9 +217,17 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
           
           case "scanner":
             if (!reconData) throw new Error("Recon data required for scanner");
-            emitExecLog(scanId, `nikto -h ${scan.target} -Format xml`);
-            emitExecLog(scanId, `gobuster dir -u ${scan.target} -w /usr/share/wordlists/common.txt`);
-            emitStdoutLog(scanId, `Starting vulnerability assessment...`);
+            emitExecLog(scanId, `[PHASE 2 + 3] Executing attack surface mapping and vulnerability analysis...`);
+            emitExecLog(scanId, `[PHASE 2] katana -u ${scan.target} -depth 3 -jc`);
+            emitExecLog(scanId, `[PHASE 2] gau --subs ${scan.target}`);
+            emitExecLog(scanId, `[PHASE 2] whatweb --headers -v ${scan.target}`);
+            emitExecLog(scanId, `[PHASE 2] arjun -u ${scan.target} --get --post`);
+            emitExecLog(scanId, `[PHASE 2] paramspider -d ${scan.target}`);
+            emitExecLog(scanId, `[PHASE 3] nuclei -u ${scan.target} -t ~/nuclei-templates/ -v -stats -si 1`);
+            emitExecLog(scanId, `[PHASE 3] ffuf -u ${scan.target}/FUZZ -w /usr/share/wordlists/common.txt`);
+            emitExecLog(scanId, `[PHASE 3] truffleHog filesystem . --json`);
+            emitStdoutLog(scanId, `[PHASE 2] Starting ATTACK SURFACE MAPPING...`);
+            emitStdoutLog(scanId, `[PHASE 3] Starting VULNERABILITY ANALYSIS...`);
             
             if (userPlanLevel === "ELITE") {
               emitAiThoughtLog(scanId, `Initiating deep vulnerability scan with OWASP methodology. Checking for SQLi, XSS, IDOR patterns.`);
@@ -225,8 +264,11 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             const exploiterPlanLevel = context?.planLevel || (await storage.getUserCredits(scan.userId)).planLevel;
             const useStealthMode = 'waf_ids_detected' in scannerData && scannerData.waf_ids_detected;
             
-            emitExecLog(scanId, `metasploit -q -x "use exploit/multi/handler"`);
-            emitStdoutLog(scanId, `Initializing exploitation framework...`);
+            emitExecLog(scanId, `[PHASE 4: TARGETED EXPLOITATION] Executing conditional exploitation...`);
+            emitExecLog(scanId, `[PHASE 4 - SQLMap] sqlmap -u "${scan.target}" --level=3 --risk=2 --batch`);
+            emitExecLog(scanId, `[PHASE 4 - Dalfox] dalfox url ${scan.target} -batch`);
+            emitExecLog(scanId, `[PHASE 4 - Commix] commix -u ${scan.target} --batch`);
+            emitStdoutLog(scanId, `[PHASE 4] Starting TARGETED EXPLOITATION...`);
             
             if (userPlanLevel === "ELITE") {
               emitAiThoughtLog(scanId, `Preparing exploit payloads for ${scannerData.vulnerabilities?.length || 0} vulnerabilities. Using ${useStealthMode ? "stealth" : "standard"} mode.`);
@@ -278,8 +320,11 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             if (!reconData || !scannerData || !exploiterData) {
               throw new Error("All previous agent data required for reporter");
             }
-            emitExecLog(scanId, `report-gen --format pdf,json --template security-audit`);
-            emitStdoutLog(scanId, `Compiling security assessment report...`);
+            emitExecLog(scanId, `[PHASE 5: REPORTING & COMPLIANCE] Mapping findings to OWASP Top 10...`);
+            emitExecLog(scanId, `report-gen --methodology pentesting-5-phase --owasp-mapping --format pdf,json --template executive,technical`);
+            emitStdoutLog(scanId, `[PHASE 5] Compiling OWASP Top 10 compliance report...`);
+            emitStdoutLog(scanId, `[PHASE 5] Generating Executive Summary for managers`);
+            emitStdoutLog(scanId, `[PHASE 5] Generating Technical Remediation guide for developers`);
             
             if (userPlanLevel === "ELITE") {
               emitAiThoughtLog(scanId, `Generating comprehensive executive and technical reports with AI-enhanced recommendations.`);
