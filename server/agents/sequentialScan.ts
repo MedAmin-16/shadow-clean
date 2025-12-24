@@ -93,6 +93,62 @@ function executeCommand(
 }
 
 /**
+ * Execute a command with REAL-TIME streaming output (no buffering)
+ * Each line is emitted immediately to the terminal as it's received
+ */
+function executeCommandWithStreaming(
+  scanId: string,
+  command: string,
+  args: string[],
+  phaseName: string
+): Promise<string> {
+  return new Promise((resolve) => {
+    const output: string[] = [];
+    const errorOutput: string[] = [];
+
+    emitExecLog(scanId, `[${phaseName}] $ ${command} ${args.join(" ")}`);
+
+    const child = spawn(command, args, { 
+      shell: true,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    child.stdout?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        output.push(line);
+        // EMIT IMMEDIATELY - no buffering
+        if (line.includes("http://") || line.includes("https://")) {
+          emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
+        }
+      });
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        emitStdoutLog(scanId, `[${phaseName}] [ERROR] ${line}`, { agentLabel: phaseName, type: "error" });
+        errorOutput.push(line);
+      });
+    });
+
+    child.on("close", (code: number) => {
+      if (code !== 0 && code !== null) {
+        emitStdoutLog(scanId, `[${phaseName}] ⚠️ Command exited with code ${code}`, { agentLabel: phaseName, type: "warning" });
+      }
+      resolve(output.join("\n"));
+    });
+
+    child.on("error", (err: Error) => {
+      emitErrorLog(scanId, `[${phaseName}] Process error: ${err.message}`);
+      resolve("");
+    });
+  });
+}
+
+/**
  * PHASE 1: Subdomain Discovery (GLOBAL)
  * Execute Assetfinder → Filter with HTTPX binary for FAST probing
  * Returns ALL live subdomains for downstream phases
@@ -131,9 +187,9 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
 
     logDiscovery("PHASE-1", discoveredSubs.length, "subdomains");
 
-    // Step 2: Filter through HTTPX binary (FAST probing)
+    // Step 2: Filter through HTTPX binary (FAST probing with streaming)
     if (discoveredSubs.length > 0) {
-      logToolExecution("PHASE-1", "httpx", ["-l", "targets.txt", "-status-code", "-follow-redirects"]);
+      logToolExecution("PHASE-1", "httpx", ["-l", "targets.txt", "-t 50", "-timeout 5"]);
       
       // Write subdomains to temp file for httpx
       const httpxInputFile = `${tmpdir()}/httpx-input-${scanData.scanId}.txt`;
@@ -142,27 +198,16 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         .join("\n");
       writeFileSync(httpxInputFile, httpxInput);
       
-      // Run httpx with -l flag (without -silent for verbose output and proper progress tracking)
-      const httpxOutput = await executeCommand(
+      // Status message
+      emitStdoutLog(scanData.scanId, `[DEBUG] HTTPX is checking ${discoveredSubs.length} targets with 50 threads (5s timeout per target)...`, { agentLabel: "HTTPX", type: "info" });
+      
+      // Run httpx with optimized flags for speed and streaming
+      const httpxOutput = await executeCommandWithStreaming(
         scanData.scanId,
         "/home/runner/workspace/bin/httpx",
-        ["-l", httpxInputFile, "-status-code", "-follow-redirects"],
+        ["-l", httpxInputFile, "-status-code", "-follow-redirects", "-t", "50", "-timeout", "5"],
         "HTTPX"
       );
-      
-      // DEBUG: Log raw httpx output
-      const rawLines = httpxOutput.split("\n").filter(l => l.trim());
-      emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] Raw httpx output lines: ${rawLines.length}`, { agentLabel: "HTTPX", type: "info" });
-      if (rawLines.length > 0) {
-        emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] First 3 lines: ${rawLines.slice(0, 3).join(" | ")}`, { agentLabel: "HTTPX", type: "info" });
-      }
-      
-      // Filter output to show only important info
-      const filteredHttpx = filterToolOutput("httpx", httpxOutput, "HTTPX");
-      emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] Filtered httpx lines: ${filteredHttpx.importantLines.length}`, { agentLabel: "HTTPX", type: "info" });
-      filteredHttpx.importantLines.forEach(line => {
-        emitStdoutLog(scanData.scanId, line, { agentLabel: "HTTPX" });
-      });
       
       // Parse live subdomains - look for any http/https URLs in the output
       const liveSubdomains = httpxOutput
@@ -185,11 +230,7 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         })
         .filter((sub, idx, arr) => arr.indexOf(sub) === idx); // Deduplicate
       
-      // DEBUG: Log parsing results
-      emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] Parsed live subdomains: ${liveSubdomains.length}`, { agentLabel: "HTTPX", type: "info" });
-      if (liveSubdomains.length > 0) {
-        emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] First 3 subdomains: ${liveSubdomains.slice(0, 3).join(", ")}`, { agentLabel: "HTTPX", type: "info" });
-      }
+      emitStdoutLog(scanData.scanId, `[PHASE 1] HTTPX found ${liveSubdomains.length} live targets`, { agentLabel: "HTTPX", type: "success" });
       
       scanData.subdomains = liveSubdomains;
       logSuccess("PHASE-1", `HTTPX verified ${liveSubdomains.length} LIVE subdomains`);
