@@ -105,34 +105,56 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 
 /**
  * Execute tool with direct binary call and capture output
+ * @param timeoutMs Optional timeout in milliseconds (default: 60000)
  */
 function executeTool(
   toolPath: string,
   args: string[],
-  input?: string
+  input?: string,
+  timeoutMs: number = 60000
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
-    const process = spawn(toolPath, args, { timeout: 60000 });
+    const childProcess = spawn(toolPath, args, { timeout: timeoutMs });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let timeoutHandle: NodeJS.Timeout | null = null;
 
-    process.stdout?.on("data", (data) => {
+    // Set timeout handler
+    if (timeoutMs) {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        childProcess.kill();
+      }, timeoutMs);
+    }
+
+    childProcess.stdout?.on("data", (data) => {
       stdout += data.toString();
     });
 
-    process.stderr?.on("data", (data) => {
+    childProcess.stderr?.on("data", (data) => {
       stderr += data.toString();
     });
 
-    process.on("close", (code) => {
-      resolve({
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-        exitCode: code || 0,
-      });
+    childProcess.on("close", (code) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timedOut) {
+        resolve({
+          stdout: stdout.trim(),
+          stderr: `TIMEOUT after ${timeoutMs}ms: ${stderr}`,
+          exitCode: 124, // Standard timeout exit code
+        });
+      } else {
+        resolve({
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          exitCode: code || 0,
+        });
+      }
     });
 
-    process.on("error", (err) => {
+    childProcess.on("error", (err) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       resolve({
         stdout: "",
         stderr: err.message,
@@ -141,14 +163,14 @@ function executeTool(
     });
 
     if (input) {
-      process.stdin?.write(input);
-      process.stdin?.end();
+      childProcess.stdin?.write(input);
+      childProcess.stdin?.end();
     }
   });
 }
 
 /**
- * PHASE 1: HARD BLOCK - Subdomain Discovery
+ * PHASE 1: HARD BLOCK - Subdomain Discovery (with 2-minute timeout per tool)
  * Execute Subfinder/Assetfinder → Filter with HTTProbe → Store results
  */
 async function phase1SubdomainDiscovery(
@@ -156,56 +178,94 @@ async function phase1SubdomainDiscovery(
   target: string,
   scanData: ScanData
 ): Promise<void> {
+  const PHASE1_TOOL_TIMEOUT = 2 * 60 * 1000; // 2 minutes per tool
+  
   emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
   emitStdoutLog(scanId, `[PHASE 1: HARD BLOCK] SUBDOMAIN DISCOVERY - Starting`);
-  emitExecLog(scanId, `${TOOL_PATHS.subfinder} -d ${target} -all`);
-  emitExecLog(scanId, `${TOOL_PATHS.assetfinder} --subs-only ${target}`);
-  emitStdoutLog(scanId, `Executing Subfinder...`);
+  emitStdoutLog(scanId, `[REAL-TIME] Tool Timeout: 2 minutes per tool`);
 
   try {
-    // Run Subfinder
-    const subfinderResult = await executeTool(TOOL_PATHS.subfinder, ["-d", target, "-all"]);
+    // ===== SUBFINDER (with 2-min timeout) =====
+    emitStdoutLog(scanId, `\n[PHASE 1] Running Subfinder for ${target}...`);
+    emitExecLog(scanId, `${TOOL_PATHS.subfinder} -d ${target} -all`);
+    const subfinderStart = Date.now();
+    
+    const subfinderResult = await executeTool(
+      TOOL_PATHS.subfinder,
+      ["-d", target, "-all"],
+      undefined,
+      PHASE1_TOOL_TIMEOUT
+    );
+    const subfinderTime = Math.round((Date.now() - subfinderStart) / 1000);
     const subfinderDomains = subfinderResult.stdout
       .split("\n")
       .filter((line) => line.trim().length > 0);
 
-    emitStdoutLog(scanId, `Subfinder found: ${subfinderDomains.length} domains`);
+    emitStdoutLog(scanId, `[PHASE 1] ✅ Subfinder completed in ${subfinderTime}s - Found: ${subfinderDomains.length} domains`);
+    if (subfinderResult.stderr && !subfinderResult.stderr.includes("TIMEOUT")) {
+      emitWarningLog(scanId, `[PHASE 1] Subfinder stderr: ${subfinderResult.stderr.substring(0, 200)}`);
+    }
 
-    // Run Assetfinder
-    emitStdoutLog(scanId, `Executing Assetfinder...`);
-    const assetfinderResult = await executeTool(TOOL_PATHS.assetfinder, ["--subs-only", target]);
+    // ===== ASSETFINDER (with 2-min timeout) =====
+    emitStdoutLog(scanId, `[PHASE 1] Running Assetfinder for ${target}...`);
+    emitExecLog(scanId, `${TOOL_PATHS.assetfinder} --subs-only ${target}`);
+    const assetfinderStart = Date.now();
+    
+    const assetfinderResult = await executeTool(
+      TOOL_PATHS.assetfinder,
+      ["--subs-only", target],
+      undefined,
+      PHASE1_TOOL_TIMEOUT
+    );
+    const assetfinderTime = Math.round((Date.now() - assetfinderStart) / 1000);
     const assetfinderDomains = assetfinderResult.stdout
       .split("\n")
       .filter((line) => line.trim().length > 0);
 
-    emitStdoutLog(scanId, `Assetfinder found: ${assetfinderDomains.length} domains`);
+    emitStdoutLog(scanId, `[PHASE 1] ✅ Assetfinder completed in ${assetfinderTime}s - Found: ${assetfinderDomains.length} domains`);
+    if (assetfinderResult.stderr && !assetfinderResult.stderr.includes("TIMEOUT")) {
+      emitWarningLog(scanId, `[PHASE 1] Assetfinder stderr: ${assetfinderResult.stderr.substring(0, 200)}`);
+    }
 
     // Merge and deduplicate
     const allDomains = Array.from(new Set([...subfinderDomains, ...assetfinderDomains]));
-    emitStdoutLog(scanId, `Merged results: ${allDomains.length} unique domains`);
+    emitStdoutLog(scanId, `[PHASE 1] Merged results: ${allDomains.length} unique domains total`);
 
-    // Filter through HTTProbe
-    emitStdoutLog(scanId, `Filtering through HTTProbe (checking ports 80, 443)...`);
-    emitExecLog(scanId, `${TOOL_PATHS.httpprobe} -p 80,443 < domains.txt`);
+    // ===== HTTPPROBE (with 2-min timeout) =====
+    if (allDomains.length === 0) {
+      emitWarningLog(scanId, `[PHASE 1] No domains discovered. Skipping HTTProbe.`);
+      scanData.subdomains = [target]; // Fallback
+    } else {
+      emitStdoutLog(scanId, `[PHASE 1] Running HTTProbe to filter live subdomains (${allDomains.length} domains)...`);
+      emitExecLog(scanId, `${TOOL_PATHS.httpprobe} -p 80,443 < domains.txt`);
+      const httpprobeStart = Date.now();
 
-    const httpprobeInput = allDomains.join("\n");
-    const httpprobeResult = await executeTool(TOOL_PATHS.httpprobe, ["-p", "80,443"], httpprobeInput);
-    const liveSubdomains = httpprobeResult.stdout
-      .split("\n")
-      .filter((line) => line.trim().length > 0);
+      const httpprobeInput = allDomains.join("\n");
+      const httpprobeResult = await executeTool(
+        TOOL_PATHS.httpprobe,
+        ["-p", "80,443"],
+        httpprobeInput,
+        PHASE1_TOOL_TIMEOUT
+      );
+      const httpprobeTime = Math.round((Date.now() - httpprobeStart) / 1000);
+      
+      const liveSubdomains = httpprobeResult.stdout
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
 
-    scanData.subdomains = liveSubdomains;
-    emitStdoutLog(scanId, `HTTProbe verified: ${liveSubdomains.length} live subdomains`);
+      scanData.subdomains = liveSubdomains;
+      emitStdoutLog(scanId, `[PHASE 1] ✅ HTTProbe completed in ${httpprobeTime}s - Verified: ${liveSubdomains.length} live subdomains`);
 
-    if (liveSubdomains.length > 0) {
-      emitStdoutLog(scanId, `Live subdomains:`);
-      liveSubdomains.forEach((sub, idx) => {
-        emitStdoutLog(scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`);
-      });
+      if (liveSubdomains.length > 0) {
+        emitStdoutLog(scanId, `[PHASE 1] Live subdomains identified:`);
+        liveSubdomains.forEach((sub, idx) => {
+          emitStdoutLog(scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`);
+        });
+      }
     }
 
     emitStdoutLog(scanId, `${'='.repeat(80)}`);
-    emitStdoutLog(scanId, `✅ PHASE 1 COMPLETE: ${liveSubdomains.length} live subdomains ready for exploitation`);
+    emitStdoutLog(scanId, `✅ PHASE 1 COMPLETE: ${scanData.subdomains.length} live subdomains ready for exploitation`);
     emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -377,12 +437,26 @@ async function runSequentialScan(scanId: string, target: string): Promise<ScanDa
   };
 
   emitInfoLog(scanId, `[SEQUENTIAL SCAN] Starting 4-phase scan of ${target}`);
+  
+  // Update database status to "running"
+  await storage.updateScan(scanId, { 
+    status: "running",
+    progress: 5,
+  });
 
   // ===== PHASE 1: HARD BLOCK =====
+  emitInfoLog(scanId, "[SEQUENTIAL SCAN] PHASE 1 STARTING: Subdomain Discovery");
   await phase1SubdomainDiscovery(scanId, target, scanData);
+  
+  // Update progress after Phase 1
+  await storage.updateScan(scanId, { progress: 20 });
 
   if (scanData.subdomains.length === 0) {
     emitErrorLog(scanId, "No live subdomains found. Scan terminating.");
+    await storage.updateScan(scanId, { 
+      status: "complete",
+      progress: 100,
+    });
     return scanData;
   }
 
@@ -409,16 +483,25 @@ async function runSequentialScan(scanId: string, target: string): Promise<ScanDa
   }
 
   // Final summary
+  const totalUrls = Array.from(scanData.urls.values()).reduce((sum, urls) => sum + urls.length, 0);
+  const totalVulns = Array.from(scanData.nucleiResults.values()).reduce((sum, vulns) => sum + vulns.length, 0);
+  const totalExploits = Array.from(scanData.exploitResults.values()).reduce((sum, exploits) => sum + exploits.length, 0);
+
   emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
   emitStdoutLog(scanId, `✅ SEQUENTIAL SCAN COMPLETE`);
   emitStdoutLog(scanId, `Subdomains scanned: ${scanData.subdomains.length}`);
-  emitStdoutLog(scanId, `Total URLs discovered: ${Array.from(scanData.urls.values()).reduce((sum, urls) => sum + urls.length, 0)}`);
-  emitStdoutLog(scanId, `Total vulnerabilities: ${Array.from(scanData.nucleiResults.values()).reduce((sum, vulns) => sum + vulns.length, 0)}`);
-  emitStdoutLog(scanId, `Exploitable vulnerabilities: ${Array.from(scanData.exploitResults.values()).reduce((sum, exploits) => sum + exploits.length, 0)}`);
+  emitStdoutLog(scanId, `Total URLs discovered: ${totalUrls}`);
+  emitStdoutLog(scanId, `Total vulnerabilities: ${totalVulns}`);
+  emitStdoutLog(scanId, `Exploitable vulnerabilities: ${totalExploits}`);
   if (scanData.errors.length > 0) {
     emitStdoutLog(scanId, `Errors encountered: ${scanData.errors.length}`);
   }
   emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
+  
+  // Update final database status
+  await storage.updateScan(scanId, { 
+    progress: 95,
+  });
 
   return scanData;
 }
