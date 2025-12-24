@@ -1,24 +1,37 @@
-import chalk from "chalk";
 import Table from "cli-table3";
 
 /**
  * Professional Modern Terminal Formatter for Security Scanner
- * Features: ASCII banner, neon colors, boxes, timestamps, icons, spinners, tables
+ * Features: ASCII banner, ANSI colors, boxes, timestamps, icons, progress bars, tables
  */
 
-// Neon color palette
-const colors = {
-  neonBlue: chalk.hex("#00D9FF"),
-  neonMagenta: chalk.hex("#FF00FF"),
-  neonGreen: chalk.hex("#39FF14"),
-  neonYellow: chalk.hex("#FFFF00"),
-  neonRed: chalk.hex("#FF0040"),
-  darkGray: chalk.hex("#333333"),
-  brightWhite: chalk.white.bold,
+// ANSI color codes - no external dependencies
+const ANSI = {
+  // Colors
+  CYAN: "\x1b[36m",
+  MAGENTA: "\x1b[35m",
+  GREEN: "\x1b[32m",
+  YELLOW: "\x1b[33m",
+  RED: "\x1b[31m",
+  GRAY: "\x1b[90m",
+  WHITE: "\x1b[37m",
+  BOLD: "\x1b[1m",
+  RESET: "\x1b[0m",
+};
+
+// Neon color palette using ANSI codes
+export const colors = {
+  neonBlue: (text: string) => `${ANSI.CYAN}${ANSI.BOLD}${text}${ANSI.RESET}`,
+  neonMagenta: (text: string) => `${ANSI.MAGENTA}${ANSI.BOLD}${text}${ANSI.RESET}`,
+  neonGreen: (text: string) => `${ANSI.GREEN}${ANSI.BOLD}${text}${ANSI.RESET}`,
+  neonYellow: (text: string) => `${ANSI.YELLOW}${ANSI.BOLD}${text}${ANSI.RESET}`,
+  neonRed: (text: string) => `${ANSI.RED}${ANSI.BOLD}${text}${ANSI.RESET}`,
+  darkGray: (text: string) => `${ANSI.GRAY}${text}${ANSI.RESET}`,
+  brightWhite: (text: string) => `${ANSI.WHITE}${ANSI.BOLD}${text}${ANSI.RESET}`,
 };
 
 // Unicode icons for different operations
-const icons = {
+export const icons = {
   speed: "⚡",
   discovery: "🔍",
   injection: "💉",
@@ -52,45 +65,27 @@ function getTimestamp(): string {
  */
 export function createBanner(toolName: string = "ELITE-SCANNER"): string {
   const banner = `
-╔════════════════════════════════════════════════════════════════════════════╗
-║                                                                            ║
-║  ${colors.neonBlue("███████████████████████████████████████████████████████████████████")}  ║
-║  ${colors.neonMagenta("███████████████████████████████████████████████████████████████████")}  ║
-║                                                                            ║
-║  ${colors.neonBlue.bold(toolName.padStart(Math.floor((70 + toolName.length) / 2)).padEnd(70))}  ║
-║                                                                            ║
-║  ${colors.neonGreen("Modern Security Scanner | Multi-Agent Reconnaissance Engine")}  ║
-║                                                                            ║
-║  ${colors.neonMagenta("███████████████████████████████████████████████████████████████████")}  ║
-║  ${colors.neonBlue("███████████████████████████████████████████████████████████████████")}  ║
-║                                                                            ║
-╚════════════════════════════════════════════════════════════════════════════╝`;
+${colors.neonCyan("╔════════════════════════════════════════════════════════════════════════════╗")}
+${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
+${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
+${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${colors.neonCyan("║")}  ${colors.neonGreen(toolName.padStart(Math.floor((70 + toolName.length) / 2)).padEnd(70))}  ${colors.neonCyan("║")}
+${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${colors.neonGreen("║  Modern Security Scanner | Multi-Agent Reconnaissance Engine              ║")}
+${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
+${colors.neonMagenta("║  ███████████████████████████████████████████████████████████████████  ║")}
+${colors.neonCyan("║")}                                                                            ${colors.neonCyan("║")}
+${colors.neonCyan("╚════════════════════════════════════════════════════════════════════════════╝")}`;
   return banner;
-}
-
-/**
- * Create a boxed section for phase output
- */
-export function createPhaseBox(phaseName: string, content: string, icon: string = icons.scan): string {
-  const header = `${icon} ${colors.neonMagenta.bold(phaseName)}`;
-  const lines = content.split("\n");
-  const maxWidth = Math.max(...lines.map(l => l.length), header.length) + 4;
-  
-  const box = `
-${colors.neonBlue("┌" + "─".repeat(maxWidth + 2) + "┐")}
-${colors.neonBlue("│")} ${header.padEnd(maxWidth)} ${colors.neonBlue("│")}
-${colors.neonBlue("├" + "─".repeat(maxWidth + 2) + "┤")}
-${lines.map(line => colors.neonBlue("│") + " " + line.padEnd(maxWidth) + " " + colors.neonBlue("│")).join("\n")}
-${colors.neonBlue("└" + "─".repeat(maxWidth + 2) + "┘")}`;
-  
-  return box;
 }
 
 /**
  * Log with consistent formatting: [HH:mm:ss] [PHASE] message
  */
 export function logPhaseInfo(phase: string, message: string, icon: string = icons.info): void {
-  console.log(`${getTimestamp()} ${colors.neonBlue(icon)} ${colors.neonBlue.bold(`[${phase}]`)} ${message}`);
+  console.log(`${getTimestamp()} ${icon} ${colors.neonBlue(`[${phase}]`)} ${message}`);
 }
 
 /**
@@ -98,7 +93,7 @@ export function logPhaseInfo(phase: string, message: string, icon: string = icon
  */
 export function logToolExecution(phase: string, tool: string, args: string[]): void {
   const command = `${tool} ${args.join(" ")}`;
-  console.log(`${getTimestamp()} ${colors.neonMagenta(icons.speed)} ${colors.neonMagenta.bold(`[${phase}]`)} Executing: ${colors.brightWhite(command)}`);
+  console.log(`${getTimestamp()} ${colors.neonMagenta(icons.speed)} ${colors.neonMagenta(`[${phase}]`)} Executing: ${colors.brightWhite(command)}`);
 }
 
 /**
@@ -108,39 +103,39 @@ export function logFinding(phase: string, title: string, severity: "critical" | 
   const severityColor = {
     critical: colors.neonRed,
     high: colors.neonYellow,
-    medium: chalk.yellow,
-    low: chalk.blue,
+    medium: (s: string) => `${ANSI.YELLOW}${s}${ANSI.RESET}`,
+    low: (s: string) => `${ANSI.CYAN}${s}${ANSI.RESET}`,
   }[severity];
   
-  console.log(`${getTimestamp()} ${colors.neonRed(icons.fire)} ${colors.neonMagenta.bold(`[${phase}]`)} ${severityColor.bold(severity.toUpperCase())} ${title}`);
+  console.log(`${getTimestamp()} ${colors.neonRed(icons.fire)} ${colors.neonMagenta(`[${phase}]`)} ${severityColor(severity.toUpperCase())} ${title}`);
 }
 
 /**
  * Log success/completion
  */
 export function logSuccess(phase: string, message: string): void {
-  console.log(`${getTimestamp()} ${colors.neonGreen(icons.check)} ${colors.neonGreen.bold(`[${phase}]`)} ${colors.neonGreen(message)}`);
+  console.log(`${getTimestamp()} ${colors.neonGreen(icons.check)} ${colors.neonGreen(`[${phase}]`)} ${colors.neonGreen(message)}`);
 }
 
 /**
  * Log warning
  */
 export function logWarning(phase: string, message: string): void {
-  console.log(`${getTimestamp()} ${colors.neonYellow(icons.warning)} ${colors.neonYellow.bold(`[${phase}]`)} ${message}`);
+  console.log(`${getTimestamp()} ${colors.neonYellow(icons.warning)} ${colors.neonYellow(`[${phase}]`)} ${message}`);
 }
 
 /**
  * Log error
  */
 export function logError(phase: string, message: string): void {
-  console.log(`${getTimestamp()} ${colors.neonRed(icons.error)} ${colors.neonRed.bold(`[${phase}]`)} ${message}`);
+  console.log(`${getTimestamp()} ${colors.neonRed(icons.error)} ${colors.neonRed(`[${phase}]`)} ${message}`);
 }
 
 /**
  * Log discovery (subdomains, URLs, etc)
  */
 export function logDiscovery(phase: string, count: number, type: string): void {
-  console.log(`${getTimestamp()} ${colors.neonBlue(icons.discovery)} ${colors.neonBlue.bold(`[${phase}]`)} Discovered ${colors.neonGreen.bold(count.toString())} ${type}`);
+  console.log(`${getTimestamp()} ${colors.neonBlue(icons.discovery)} ${colors.neonBlue(`[${phase}]`)} Discovered ${colors.neonGreen(count.toString())} ${type}`);
 }
 
 /**
@@ -154,9 +149,9 @@ export function createSummaryTable(data: {
 }): string {
   const table = new Table({
     head: [
-      colors.neonMagenta.bold("METRIC"),
-      colors.neonMagenta.bold("COUNT"),
-      colors.neonMagenta.bold("STATUS"),
+      colors.neonMagenta("METRIC"),
+      colors.neonMagenta("COUNT"),
+      colors.neonMagenta("STATUS"),
     ],
     style: {
       head: [],
@@ -170,13 +165,13 @@ export function createSummaryTable(data: {
   const mediumCount = data.vulnerabilities.filter(v => v.severity === "medium").length;
 
   table.push(
-    ["Live Subdomains", colors.neonBlue.bold(data.subdomains.length.toString()), colors.neonGreen(icons.check)],
-    ["Total URLs", colors.neonBlue.bold(data.totalUrls.toString()), colors.neonGreen(icons.check)],
-    ["Total Vulnerabilities", colors.neonRed.bold(data.vulnerabilities.length.toString()), data.vulnerabilities.length > 0 ? colors.neonRed(icons.fire) : colors.neonGray("-")],
-    ["🔴 Critical", colors.neonRed.bold(criticalCount.toString()), criticalCount > 0 ? colors.neonRed(icons.fire) : "-"],
-    ["🟠 High", colors.neonYellow.bold(highCount.toString()), highCount > 0 ? colors.neonYellow(icons.warning) : "-"],
-    ["🟡 Medium", chalk.yellow.bold(mediumCount.toString()), mediumCount > 0 ? chalk.yellow(icons.warning) : "-"],
-    ["Errors", colors.neonRed.bold(data.errors.length.toString()), data.errors.length > 0 ? colors.neonRed(icons.error) : colors.neonGreen("-")],
+    ["Live Subdomains", colors.neonBlue(data.subdomains.length.toString()), colors.neonGreen(icons.check)],
+    ["Total URLs", colors.neonBlue(data.totalUrls.toString()), colors.neonGreen(icons.check)],
+    ["Total Vulnerabilities", colors.neonRed(data.vulnerabilities.length.toString()), data.vulnerabilities.length > 0 ? colors.neonRed(icons.fire) : "-"],
+    ["🔴 Critical", colors.neonRed(criticalCount.toString()), criticalCount > 0 ? colors.neonRed(icons.fire) : "-"],
+    ["🟠 High", colors.neonYellow(highCount.toString()), highCount > 0 ? colors.neonYellow(icons.warning) : "-"],
+    ["🟡 Medium", `${ANSI.YELLOW}${ANSI.BOLD}${mediumCount}${ANSI.RESET}`, mediumCount > 0 ? colors.neonYellow(icons.warning) : "-"],
+    ["Errors", colors.neonRed(data.errors.length.toString()), data.errors.length > 0 ? colors.neonRed(icons.error) : colors.neonGreen("-")],
   );
 
   return table.toString();
@@ -199,9 +194,9 @@ export function createFinalReport(
   const durationSec = (duration / 1000).toFixed(2);
   
   const report = `
-${colors.neonGreen.bold("════════════════════════════════════════════════════════════════════════════")}
-${colors.neonGreen.bold("█")} ${colors.neonGreen.bold("SCAN COMPLETE")} ${colors.neonGreen(icons.complete)}
-${colors.neonGreen.bold("════════════════════════════════════════════════════════════════════════════")}
+${colors.neonGreen("════════════════════════════════════════════════════════════════════════════")}
+${colors.neonGreen("█")} ${colors.neonGreen("SCAN COMPLETE")} ${icons.complete}
+${colors.neonGreen("════════════════════════════════════════════════════════════════════════════")}
 
 ${colors.neonBlue("Target:")} ${colors.brightWhite(target)}
 ${colors.neonBlue("Duration:")} ${colors.brightWhite(durationSec + "s")}
@@ -209,9 +204,9 @@ ${colors.neonBlue("Timestamp:")} ${colors.brightWhite(new Date().toISOString())}
 
 ${createSummaryTable(data)}
 
-${colors.neonGreen.bold("════════════════════════════════════════════════════════════════════════════")}
+${colors.neonGreen("════════════════════════════════════════════════════════════════════════════")}
 ${colors.neonMagenta("Ready for exploitation phase or report generation")}
-${colors.neonGreen.bold("════════════════════════════════════════════════════════════════════════════")}`;
+${colors.neonGreen("════════════════════════════════════════════════════════════════════════════")}`;
 
   return report;
 }
@@ -229,5 +224,5 @@ export function createProgressLine(current: number, total: number, label: string
   return `${label}: ${bar} ${percentage}% (${current}/${total})`;
 }
 
-// Re-export colors and icons for use in other modules
-export { colors, icons };
+// Helper function for cyan color (was neonCyan)
+const neonCyan = (text: string) => `${ANSI.CYAN}${ANSI.BOLD}${text}${ANSI.RESET}`;

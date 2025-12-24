@@ -53,6 +53,19 @@ import {
   testXss,
 } from "../src/utils/toolExecutor";
 import { secretScanService } from "../src/services/secretScanService";
+import {
+  createBanner,
+  logPhaseInfo,
+  logToolExecution,
+  logFinding,
+  logSuccess,
+  logWarning,
+  logError,
+  logDiscovery,
+  icons,
+  colors,
+} from "../src/utils/terminalFormatter";
+import gradient from "gradient-string";
 
 /**
  * Notify webhook for critical findings
@@ -60,9 +73,9 @@ import { secretScanService } from "../src/services/secretScanService";
 async function notifyWebhook(scanId: string, vuln: EnhancedVulnerability): Promise<void> {
   try {
     // Webhook notification for critical/high vulnerabilities
-    console.log(`[WEBHOOK] Critical finding for scan ${scanId}:`, vuln.title);
+    logFinding("WEBHOOK", vuln.title, vuln.severity);
   } catch (e) {
-    console.error("Webhook notification failed:", e);
+    logError("WEBHOOK", `Notification failed: ${String(e)}`);
   }
 }
 
@@ -84,14 +97,14 @@ async function executeAgent(
     let timedOut = false;
     
     emitExecLog(scanId, `[${agentLabel}] $ ${command} ${args.join(" ")}`, { agentLabel });
-    console.log(`[AGENT] Spawning: ${command} with ${args.length} args for scanId=${scanId}, timeout=${timeoutMs}ms`);
+    logToolExecution(agentLabel, command, args);
     
     const child = spawn(command, args, { shell: true });
     
     // Set timeout - kill process if it exceeds limit
     const timeout = setTimeout(() => {
       timedOut = true;
-      console.error(`[AGENT] ${agentLabel} TIMEOUT after ${timeoutMs}ms`);
+      logError(agentLabel, `TIMEOUT after ${(timeoutMs / 1000).toFixed(1)}s`);
       emitStdoutLog(scanId, `[TIMEOUT] [${agentLabel}] Process exceeded ${timeoutMs}ms timeout limit, killing...`, { agentLabel, type: "error" });
       child.kill("SIGKILL");
     }, timeoutMs);
@@ -100,12 +113,10 @@ async function executeAgent(
     child.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
       const lines = text.split("\n");
-      console.log(`[AGENT] ${agentLabel} stdout: ${lines.length} lines received`);
       
       lines.forEach((line: string, idx: number) => {
         if (line.trim()) {
           const message = `[REAL-TIME] [${agentLabel}] ${line}`;
-          console.log(message);
           emitStdoutLog(scanId, message, { agentLabel, type: "stdout" });
           output.push(line);
         } else if (line === "" && idx < lines.length - 1) {
@@ -119,13 +130,10 @@ async function executeAgent(
     child.stderr?.on("data", (data: Buffer) => {
       const text = data.toString();
       const lines = text.split("\n");
-      console.log(`[AGENT] ${agentLabel} stderr: ${lines.length} lines received`);
       
       lines.forEach((line: string) => {
         if (line.trim()) {
-          const message = `[DEBUG] [${agentLabel}] ${line}`;
-          console.log(message);
-          emitStdoutLog(scanId, message, { agentLabel, type: "stderr" });
+          emitStdoutLog(scanId, `[DEBUG] ${line}`, { agentLabel, type: "stderr" });
         }
       });
     });
@@ -133,7 +141,7 @@ async function executeAgent(
     child.on("close", (code: number) => {
       clearTimeout(timeout);
       if (!timedOut) {
-        console.log(`[AGENT] ${agentLabel} closed with code ${code}, total output lines: ${output.length}`);
+        logPhaseInfo(agentLabel, `Completed with ${output.length} output lines`, icons.check);
         emitStdoutLog(scanId, `[AGENT] ${agentLabel} completed with ${output.length} output lines`, { agentLabel, type: "info" });
       }
       resolve(output.join("\n"));
@@ -141,7 +149,7 @@ async function executeAgent(
     
     child.on("error", (err: Error) => {
       clearTimeout(timeout);
-      console.error(`[AGENT] ${agentLabel} error:`, err.message);
+      logError(agentLabel, `Process error - ${err.message}`);
       emitStdoutLog(scanId, `[ERROR] [${agentLabel}] Process error - ${err.message}`, { agentLabel, type: "error" });
       resolve("");
     });
