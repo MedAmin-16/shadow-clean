@@ -220,7 +220,7 @@ export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Port Scanner", tool: "netstat", command: "netstat -tuln" },
   "AGENT-03": { name: "Web Service Mapper", tool: "nikto", command: "nikto -h" },
-  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/go/bin/nuclei -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
+  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -u" },
   "AGENT-05": { name: "Exploitation Framework", tool: "metasploit", command: "msfvenom" },
   "AGENT-06": { name: "API Security Analyzer", tool: "burp", command: "burpsuite --analyze" },
   "AGENT-07": { name: "Cryptographic Weakness Detector", tool: "testssl", command: "testssl.sh" },
@@ -296,7 +296,7 @@ export async function runScannerAgent(
     // Run real Nuclei scanning for CVEs - SKIP ON ERROR
     emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2`, { agentLabel: "SCANNER" });
     try {
-      const nucleiOutput = await executeAgent(scanId, "/home/runner/go/bin/nuclei", ["-u", target, "-t", "/home/runner/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2"], "AGENT-04");
+      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2"], "AGENT-04");
       
       // Parse Nuclei JSON output if available
       try {
@@ -330,16 +330,19 @@ export async function runScannerAgent(
     }
 
     // Run real SQLMap scanning for SQL injection - SKIP ON ERROR
-    emitStdoutLog(scanId, `[RUNNING] sqlmap -u ${target} --batch --flush-session --random-agent`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[RUNNING] sqlmap -u ${target} --batch --flush-session --random-agent --level=3 --risk=2`, { agentLabel: "SCANNER" });
     try {
-      const sqlmapOutput = await executeAgent(scanId, "sqlmap", ["-u", target, "--batch", "--flush-session", "--random-agent"], "AGENT-08");
+      const sqlmapOutput = await executeAgent(scanId, "sqlmap", ["-u", target, "--batch", "--flush-session", "--random-agent", "--level=3", "--risk=2"], "AGENT-08");
       
-      // Check for SQL injection indicators
-      if (sqlmapOutput.match(/SQL\s+injection|vulnerable|parameter.*injectable|VULNERABLE/i)) {
+      // Check for SQL injection indicators - MUST exclude non-injectable results
+      const hasNonInjectable = sqlmapOutput.match(/non-injectable|not.*injectable|all.*tested.*parameters.*not.*vulnerable/i);
+      const hasSQLiVuln = sqlmapOutput.match(/SQL\s+injection|vulnerable.*parameter|injectable.*parameter|tested.*parameter.*is.*vulnerable/i);
+      
+      if (hasSQLiVuln && !hasNonInjectable) {
         const vuln: EnhancedVulnerability = {
           id: `sqli-${Date.now()}`,
           title: "SQL Injection Vulnerability",
-          description: `SQL injection detected on target via SQLMap execution.`,
+          description: `SQL injection detected on target via SQLMap execution (Level 3, Risk 2 testing).`,
           severity: "critical",
           owaspCategory: "A03:2021-Injection",
           sansTop25: "CWE-89",
@@ -347,9 +350,12 @@ export async function runScannerAgent(
           service: "https",
           remediationCode: `Use parameterized queries and prepared statements for all database operations.`,
           cve: "CVE-2019-9193",
+          confidenceScore: 95,
         };
         findings.push(vuln);
-        emitStdoutLog(scanId, `🚨 [CRITICAL] SQL Injection Vulnerability Found`, { agentLabel: "SCANNER", type: "finding" });
+        emitStdoutLog(scanId, `🚨 [CRITICAL] SQL Injection Vulnerability Found (Confirmed)`, { agentLabel: "SCANNER", type: "finding" });
+      } else if (hasNonInjectable) {
+        emitStdoutLog(scanId, `✓ [INFO] SQLMap: Target tested - No SQL injection vulnerabilities detected`, { agentLabel: "SCANNER", type: "info" });
       }
     } catch (sqlmapError) {
       emitStdoutLog(scanId, `[ERROR] SQLMap scanning failed: ${sqlmapError instanceof Error ? sqlmapError.message : "unknown error"}. Continuing to next tool...`, { agentLabel: "SCANNER" });
@@ -397,14 +403,17 @@ export async function runScannerAgent(
           const args = agent.command.split(" ").concat([currentTarget]);
           const output = await executeAgent(scanId, "sqlmap", args, agentKey);
           
-          // Detect SQL injection from raw output
-          if (output.match(/SQL\s+injection|vulnerable|parameter.*injectable/i)) {
+          // Detect SQL injection from raw output - MUST exclude non-injectable
+          const nonInj = output.match(/non-injectable|not.*injectable|all.*tested.*not.*vulnerable/i);
+          const hasSQLi = output.match(/SQL\s+injection|vulnerable.*parameter|injectable.*parameter/i);
+          
+          if (hasSQLi && !nonInj) {
             const vuln: EnhancedVulnerability = {
               id: `${agentKey}-sqli-${Date.now()}`,
               title: "SQL Injection Vulnerability",
-              description: `SQL injection detected from real SQLMap execution.`,
+              description: `SQL injection detected from real SQLMap execution (Level 3, Risk 2).`,
               severity: "critical",
-              confidenceScore: 90,
+              confidenceScore: 95,
               owaspCategory: "A03:2021-Injection",
               sansTop25: "CWE-89",
               remediationCode: "Use parameterized queries and prepared statements.",
@@ -414,7 +423,7 @@ export async function runScannerAgent(
               service: "https",
             };
             agentVulns.push(vuln);
-            emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] SQL Injection Vulnerability Found`, { agentLabel: agentKey, type: "finding" });
+            emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] SQL Injection Vulnerability Confirmed`, { agentLabel: agentKey, type: "finding" });
           }
         } catch (error) {
           emitStdoutLog(scanId, `[${agentKey}] ⚠️ SQLMap execution error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
@@ -423,7 +432,7 @@ export async function runScannerAgent(
         // Nuclei: -t /home/runner/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
         try {
           const args = agent.command.split(" ").concat([currentTarget]);
-          const output = await executeAgent(scanId, "/home/runner/go/bin/nuclei", args, agentKey);
+          const output = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", args, agentKey);
           
           // Detect vulnerabilities from raw nuclei output
           if (output.match(/\[.*\]\s+\[.*\]\s+.*|template-match|found/i)) {
