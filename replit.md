@@ -108,6 +108,26 @@ The core security scanning system now follows a **STRICT, PROFESSIONAL PENTESTIN
 
 Each phase executes sequentially with strict tool specifications. All agents run asynchronously and update scan progress in real-time with cinematic terminal effects.
 
+### RECURSIVE SWARM LOGIC (CRITICAL UPDATE)
+
+**The system now implements TRUE RECURSIVE SCANNING ACROSS THE ENTIRE INFRASTRUCTURE:**
+
+1. **Phase 1: RECONNAISSANCE** discovers all live subdomains via HTTProbe
+2. **Phases 2-4 RECURSIVELY LOOP** through EVERY subdomain discovered:
+   - Phase 2-3 (Attack Surface Mapping + Vulnerability Analysis) runs on EACH subdomain
+   - Phase 4 (Targeted Exploitation) runs on EACH subdomain
+3. **CONCURRENCY CONTROL**: Scans 3-5 subdomains at a time to prevent RAM exhaustion
+4. **UNIFIED AGGREGATION**: All findings from all subdomains are collected and organized by subdomain
+5. **UNIFIED REPORT**: Final report shows all vulnerabilities across the entire infrastructure, organized by subdomain
+
+**Example Flow**:
+- Phase 1: Discovers `main.com`, `api.main.com`, `admin.main.com`, `cdn.main.com` (4 subdomains)
+- Phases 2-4 Loop Iteration 1: Scans `main.com`, `api.main.com`, `admin.main.com` (batch of 3)
+- Phases 2-4 Loop Iteration 2: Scans `cdn.main.com` (remaining batch)
+- Final Report: Single PDF/JSON with findings organized by subdomain + overall risk assessment
+
+This is what makes it a true **Agent Swarm** - the entire infrastructure is attacked in parallel batches with full coordination.
+
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect
 - **Schema**: Defined in `shared/schema.ts` with Zod validation

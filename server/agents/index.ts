@@ -81,6 +81,7 @@ function getAgentSequenceForPlan(planLevel: PlanLevel): AgentType[] {
 
 const GLOBAL_PIPELINE_TIMEOUT_MS = 30 * 60 * 1000;
 const PER_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
+const CONCURRENCY_LIMIT = 4; // Max 3-5 subdomains at a time to avoid RAM crash
 
 class TimeoutError extends Error {
   constructor(message: string) {
@@ -98,6 +99,31 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
   return Promise.race([promise, timeoutPromise]).finally(() => {
     clearTimeout(timeoutId);
   });
+}
+
+/**
+ * CONCURRENCY CONTROL FOR SUBDOMAIN SCANNING
+ * Processes subdomains in batches to avoid RAM exhaustion
+ */
+async function processWithConcurrency<T>(
+  items: string[],
+  processor: (item: string, index: number) => Promise<T>,
+  concurrencyLimit: number = CONCURRENCY_LIMIT
+): Promise<T[]> {
+  const results: T[] = [];
+  
+  for (let i = 0; i < items.length; i += concurrencyLimit) {
+    const batch = items.slice(i, i + concurrencyLimit);
+    const startIdx = i;
+    
+    const batchResults = await Promise.all(
+      batch.map((item, batchIdx) => processor(item, startIdx + batchIdx))
+    );
+    
+    results.push(...batchResults);
+  }
+  
+  return results;
 }
 
 function getAgentProgress(agentIndex: number, agentProgress: number): number {
@@ -144,6 +170,14 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
   let reconData: ReconFindings | undefined;
   let scannerData: EnhancedScannerFindings | undefined;
   let exploiterData: ExploiterFindings | undefined;
+  
+  // RECURSIVE SWARM TRACKING: Store subdomain-organized results
+  interface SubdomainScanResult {
+    subdomain: string;
+    scanner?: EnhancedScannerFindings;
+    exploiter?: ExploiterFindings;
+  }
+  const subdomainResults: SubdomainScanResult[] = [];
 
   try {
     for (let i = 0; i < AGENT_SEQUENCE.length; i++) {
@@ -217,103 +251,157 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
           
           case "scanner":
             if (!reconData) throw new Error("Recon data required for scanner");
-            emitExecLog(scanId, `[PHASE 2 + 3] Executing attack surface mapping and vulnerability analysis...`);
-            emitExecLog(scanId, `[PHASE 2] katana -u ${scan.target} -depth 3 -jc`);
-            emitExecLog(scanId, `[PHASE 2] gau --subs ${scan.target}`);
-            emitExecLog(scanId, `[PHASE 2] whatweb --headers -v ${scan.target}`);
-            emitExecLog(scanId, `[PHASE 2] arjun -u ${scan.target} --get --post`);
-            emitExecLog(scanId, `[PHASE 2] paramspider -d ${scan.target}`);
-            emitExecLog(scanId, `[PHASE 3] nuclei -u ${scan.target} -t ~/nuclei-templates/ -v -stats -si 1`);
-            emitExecLog(scanId, `[PHASE 3] ffuf -u ${scan.target}/FUZZ -w /usr/share/wordlists/common.txt`);
-            emitExecLog(scanId, `[PHASE 3] truffleHog filesystem . --json`);
-            emitStdoutLog(scanId, `[PHASE 2] Starting ATTACK SURFACE MAPPING...`);
-            emitStdoutLog(scanId, `[PHASE 3] Starting VULNERABILITY ANALYSIS...`);
             
-            if (userPlanLevel === "ELITE") {
-              emitAiThoughtLog(scanId, `Initiating deep vulnerability scan with OWASP methodology. Checking for SQLi, XSS, IDOR patterns.`);
+            // RECURSIVE SWARM: Extract live subdomains from Phase 1
+            const liveSubdomains = reconData.subdomains || [scan.target];
+            const totalSubdomains = liveSubdomains.length;
+            
+            emitExecLog(scanId, `[RECURSIVE SWARM ACTIVATED] Phase 1 discovered ${totalSubdomains} live subdomain(s)`);
+            emitStdoutLog(scanId, `[SWARM MODE] Targeting ${totalSubdomains} subdomain(s) with PHASES 2-4 (Concurrency Limit: ${CONCURRENCY_LIMIT})`);
+            
+            if (totalSubdomains > 1) {
+              emitStdoutLog(scanId, `[SWARM] Discovered subdomains:`);
+              liveSubdomains.forEach((sub, idx) => {
+                emitStdoutLog(scanId, `  [${idx + 1}/${totalSubdomains}] ${sub}`);
+              });
             }
             
-            scannerData = await withTimeout(
-              runScannerAgent(scan.target, reconData, {
-                userId: scan.userId,
-                scanId: scanId,
-                onProgress,
-                planLevel: userPlanLevel,
-              }),
-              PER_AGENT_TIMEOUT_MS,
-              "Scanner agent"
+            // Process subdomains with concurrency control
+            subdomainResults.length = 0;
+            const subdomainProcessingResults = await processWithConcurrency(
+              liveSubdomains,
+              async (subdomain: string, index: number) => {
+                emitExecLog(scanId, `[SWARM] [${index + 1}/${totalSubdomains}] Processing: ${subdomain}`);
+                emitStdoutLog(scanId, `[PHASE 2-3] Scanning subdomain [${index + 1}/${totalSubdomains}]: ${subdomain}`);
+                
+                try {
+                  const subdomainScannerData = await withTimeout(
+                    runScannerAgent(subdomain, reconData, {
+                      userId: scan.userId,
+                      scanId: scanId,
+                      onProgress,
+                      planLevel: userPlanLevel,
+                    }),
+                    PER_AGENT_TIMEOUT_MS,
+                    `Scanner agent [${subdomain}]`
+                  );
+                  
+                  emitStdoutLog(scanId, `[PHASE 2-3] Subdomain ${subdomain}: ${subdomainScannerData?.vulnerabilities?.length || 0} vulnerabilities`);
+                  
+                  return {
+                    subdomain,
+                    scanner: subdomainScannerData,
+                  } as SubdomainScanResult;
+                } catch (err) {
+                  emitStdoutLog(scanId, `[ERROR] Scanner failed for ${subdomain}: ${err instanceof Error ? err.message : "Unknown error"}`);
+                  return { subdomain, scanner: undefined } as SubdomainScanResult;
+                }
+              },
+              CONCURRENCY_LIMIT
             );
             
-            if (scannerData && scannerData.vulnerabilities) {
-              emitStdoutLog(scanId, `Vulnerabilities discovered: ${scannerData.vulnerabilities.length}`);
-              scannerData.vulnerabilities.forEach((v: EnhancedVulnerability) => {
-                emitStdoutLog(scanId, `  [${v.severity.toUpperCase()}] ${v.title}`);
-              });
-              if (userPlanLevel === "ELITE") {
-                const criticalCount = scannerData.vulnerabilities.filter((v: EnhancedVulnerability) => v.severity === "critical").length;
-                if (criticalCount > 0) {
-                  emitAiThoughtLog(scanId, `CRITICAL: Found ${criticalCount} critical vulnerabilities. Recommending immediate remediation.`);
-                }
-              }
-            }
+            subdomainResults.push(...subdomainProcessingResults);
+            
+            // Aggregate scanner data from all subdomains
+            const aggregatedVulnerabilities = subdomainResults
+              .flatMap(r => r.scanner?.vulnerabilities || [])
+              .map(v => ({ ...v, subdomain: v.service || scan.target }));
+            
+            scannerData = {
+              vulnerabilities: aggregatedVulnerabilities,
+              apiEndpoints: subdomainResults.flatMap(r => r.scanner?.apiEndpoints || []),
+              technologies: [...new Set(subdomainResults.flatMap(r => r.scanner?.technologies || []))],
+              totalFindings: aggregatedVulnerabilities.length,
+              criticalCount: aggregatedVulnerabilities.filter(v => v.severity === "critical").length,
+              highCount: aggregatedVulnerabilities.filter(v => v.severity === "high").length,
+              decisionLog: [`Scanned ${totalSubdomains} subdomains with ${CONCURRENCY_LIMIT}-concurrent limit`],
+              agentResults: {},
+            };
+            
+            emitStdoutLog(scanId, `[SWARM PHASE 2-3 COMPLETE] Total vulnerabilities across all subdomains: ${scannerData.totalFindings}`);
             result = scannerData;
             break;
           
           case "exploiter":
-            if (!scannerData) throw new Error("Scanner data required for exploiter");
+            if (!scannerData || subdomainResults.length === 0) throw new Error("Scanner data and subdomain results required for exploiter");
             const exploiterPlanLevel = context?.planLevel || (await storage.getUserCredits(scan.userId)).planLevel;
-            const useStealthMode = 'waf_ids_detected' in scannerData && scannerData.waf_ids_detected;
             
-            emitExecLog(scanId, `[PHASE 4: TARGETED EXPLOITATION] Executing conditional exploitation...`);
-            emitExecLog(scanId, `[PHASE 4 - SQLMap] sqlmap -u "${scan.target}" --level=3 --risk=2 --batch`);
-            emitExecLog(scanId, `[PHASE 4 - Dalfox] dalfox url ${scan.target} -batch`);
-            emitExecLog(scanId, `[PHASE 4 - Commix] commix -u ${scan.target} --batch`);
-            emitStdoutLog(scanId, `[PHASE 4] Starting TARGETED EXPLOITATION...`);
+            emitExecLog(scanId, `[PHASE 4: RECURSIVE SWARM EXPLOITATION] Running on ${subdomainResults.length} subdomains...`);
+            emitStdoutLog(scanId, `[PHASE 4] Starting TARGETED EXPLOITATION on all discovered subdomains...`);
             
-            if (userPlanLevel === "ELITE") {
-              emitAiThoughtLog(scanId, `Preparing exploit payloads for ${scannerData.vulnerabilities?.length || 0} vulnerabilities. Using ${useStealthMode ? "stealth" : "standard"} mode.`);
-            }
+            // Process exploitation for each subdomain with concurrency control
+            const exploitationResults = await processWithConcurrency(
+              subdomainResults,
+              async (result: SubdomainScanResult, index: number) => {
+                emitStdoutLog(scanId, `[PHASE 4] Exploiting vulnerabilities in [${index + 1}/${subdomainResults.length}]: ${result.subdomain}`);
+                
+                try {
+                  const useStealthMode = 'waf_ids_detected' in (result.scanner || {}) && (result.scanner as any)?.waf_ids_detected;
+                  
+                  let exploitResult: ExploiterFindings;
+                  if (useStealthMode && (exploiterPlanLevel === "ELITE" || exploiterPlanLevel === "STANDARD")) {
+                    const stealthResult = await withTimeout(
+                      runStealthExploiterAgent(result.subdomain, result.scanner!, {
+                        userId: scan.userId,
+                        scanId: scanId,
+                        stealthLevel: exploiterPlanLevel === "ELITE" ? "aggressive" : "cautious",
+                        adaptiveMode: true,
+                        onProgress,
+                      }),
+                      PER_AGENT_TIMEOUT_MS,
+                      `Stealth exploiter [${result.subdomain}]`
+                    );
+                    exploitResult = {
+                      exploitAttempts: stealthResult.exploitAttempts.map(e => ({
+                        vulnerability: e.vulnerabilityTitle,
+                        success: e.success,
+                        technique: e.technique,
+                        evidence: e.evidence,
+                      })),
+                      accessGained: stealthResult.accessGained,
+                      riskLevel: stealthResult.riskLevel,
+                    };
+                  } else {
+                    exploitResult = await withTimeout(
+                      runExploiterAgent(result.subdomain, result.scanner!, onProgress),
+                      PER_AGENT_TIMEOUT_MS,
+                      `Exploiter [${result.subdomain}]`
+                    );
+                  }
+                  
+                  const successCount = exploitResult.exploitAttempts?.filter(e => e.success).length || 0;
+                  emitStdoutLog(scanId, `[PHASE 4] Subdomain ${result.subdomain}: ${successCount} successful exploits`);
+                  
+                  return { ...result, exploiter: exploitResult } as SubdomainScanResult & { exploiter: ExploiterFindings };
+                } catch (err) {
+                  emitStdoutLog(scanId, `[ERROR] Exploitation failed for ${result.subdomain}: ${err instanceof Error ? err.message : "Unknown error"}`);
+                  return { ...result, exploiter: undefined } as SubdomainScanResult;
+                }
+              },
+              CONCURRENCY_LIMIT
+            );
             
-            if (useStealthMode && (exploiterPlanLevel === "ELITE" || exploiterPlanLevel === "STANDARD")) {
-              emitInfoLog(scanId, `WAF/IDS detected - switching to stealth mode`);
-              const stealthResult = await withTimeout(
-                runStealthExploiterAgent(scan.target, scannerData, {
-                  userId: scan.userId,
-                  scanId: scanId,
-                  stealthLevel: exploiterPlanLevel === "ELITE" ? "aggressive" : "cautious",
-                  adaptiveMode: true,
-                  onProgress,
-                }),
-                PER_AGENT_TIMEOUT_MS,
-                "Stealth exploiter agent"
-              );
-              exploiterData = {
-                exploitAttempts: stealthResult.exploitAttempts.map(e => ({
-                  vulnerability: e.vulnerabilityTitle,
-                  success: e.success,
-                  technique: e.technique,
-                  evidence: e.evidence,
-                })),
-                accessGained: stealthResult.accessGained,
-                riskLevel: stealthResult.riskLevel,
-              };
-              result = exploiterData;
-            } else {
-              exploiterData = await withTimeout(
-                runExploiterAgent(scan.target, scannerData, onProgress),
-                PER_AGENT_TIMEOUT_MS,
-                "Exploiter agent"
-              );
-              result = exploiterData;
-            }
-            
-            if (exploiterData) {
-              const successfulExploits = exploiterData.exploitAttempts?.filter(e => e.success).length || 0;
-              emitStdoutLog(scanId, `Exploitation complete: ${successfulExploits} successful, Risk: ${exploiterData.riskLevel}`);
-              if (userPlanLevel === "ELITE" && exploiterData.accessGained) {
-                emitAiThoughtLog(scanId, `Access gained: ${exploiterData.accessGained}. Documenting attack chain for report.`);
+            // Update subdomain results with exploiter data
+            exploitationResults.forEach((result, idx) => {
+              const existing = subdomainResults.find(r => r.subdomain === result.subdomain);
+              if (existing && result.exploiter) {
+                existing.exploiter = result.exploiter;
               }
-            }
+            });
+            
+            // Aggregate exploiter data
+            const aggregatedExploits = subdomainResults
+              .flatMap(r => r.exploiter?.exploitAttempts || []);
+            
+            exploiterData = {
+              exploitAttempts: aggregatedExploits,
+              accessGained: subdomainResults.some(r => r.exploiter?.accessGained) ? "Multiple subdomains compromised" : undefined,
+              riskLevel: subdomainResults.some(r => r.exploiter?.riskLevel === "critical") ? "critical" : 
+                         subdomainResults.some(r => r.exploiter?.riskLevel === "high") ? "high" : "medium",
+            };
+            
+            emitStdoutLog(scanId, `[SWARM PHASE 4 COMPLETE] Total successful exploits across all subdomains: ${aggregatedExploits.filter(e => e.success).length}`);
+            result = exploiterData;
             break;
           
           case "reporter":
