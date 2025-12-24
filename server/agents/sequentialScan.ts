@@ -2,7 +2,6 @@ import { spawn } from "child_process";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
-import { probeHttpTarget } from "../src/utils/toolExecutor";
 
 /**
  * FULL DOMAIN-WIDE ENGINE - GLOBAL PHASE-BASED EXECUTION
@@ -81,7 +80,7 @@ function executeCommand(
 
 /**
  * PHASE 1: Subdomain Discovery (GLOBAL)
- * Execute Assetfinder → Filter with internal Node.js HTTP probe
+ * Execute Assetfinder → Filter with HTTPX binary for FAST probing
  * Returns ALL live subdomains for downstream phases
  */
 async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
@@ -118,35 +117,52 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
 
     emitStdoutLog(scanData.scanId, `[PHASE 1] Discovered ${discoveredSubs.length} subdomains`, { agentLabel: "PHASE-1" });
 
-    // Step 2: Filter through native Node.js HTTP probe
+    // Step 2: Filter through HTTPX binary (FAST probing)
     if (discoveredSubs.length > 0) {
-      emitStdoutLog(scanData.scanId, `[PHASE 1] Probing ${discoveredSubs.length} subdomain(s) for live status...`, { agentLabel: "PHASE-1" });
+      emitStdoutLog(scanData.scanId, `[PHASE 1] Probing ${discoveredSubs.length} subdomain(s) with HTTPX (fast)...`, { agentLabel: "PHASE-1" });
       
-      const liveSubdomains: string[] = [];
+      // Write subdomains to temp file for httpx
+      const httpxInputFile = `${tmpdir()}/httpx-input-${scanData.scanId}.txt`;
+      const httpxInput = discoveredSubs
+        .map(sub => sub.startsWith("http") ? sub : `https://${sub}`)
+        .join("\n");
+      writeFileSync(httpxInputFile, httpxInput);
       
-      for (const subdomain of discoveredSubs) {
-        try {
-          const probeUrl = subdomain.startsWith("http") ? subdomain : `https://${subdomain}`;
-          const probeResult = await probeHttpTarget(scanData.scanId, probeUrl, "NATIVE-HTTPPROBE");
-          
-          if (probeResult.reachable) {
-            liveSubdomains.push(subdomain);
-            emitStdoutLog(scanData.scanId, `[PHASE 1] ✓ LIVE: ${subdomain} (HTTP ${probeResult.statusCode || 'N/A'})`, { agentLabel: "PHASE-1", type: "success" });
-            scanData.subdomainMetadata.set(subdomain, { urlCount: 0, vulnerabilityCount: 0 });
-          } else {
-            emitStdoutLog(scanData.scanId, `[PHASE 1] ✗ Dead: ${subdomain}`, { agentLabel: "PHASE-1", type: "info" });
+      // Run httpx with -l flag
+      const httpxOutput = await executeCommand(
+        scanData.scanId,
+        "/home/runner/workspace/bin/httpx",
+        ["-l", httpxInputFile, "-status-code", "-follow-redirects"],
+        "HTTPX"
+      );
+      
+      const liveSubdomains = httpxOutput
+        .split("\n")
+        .filter(line => line.trim() && (line.includes("http://") || line.includes("https://")))
+        .map(line => {
+          try {
+            const url = new URL(line);
+            return url.hostname || line;
+          } catch {
+            return line;
           }
-        } catch (probeError) {
-          emitStdoutLog(scanData.scanId, `[PHASE 1] ⚠️ Probe failed for ${subdomain}`, { agentLabel: "PHASE-1", type: "warning" });
-        }
-      }
-
+        })
+        .filter((sub, idx, arr) => arr.indexOf(sub) === idx); // Deduplicate
+      
       scanData.subdomains = liveSubdomains;
-      emitStdoutLog(scanData.scanId, `[PHASE 1] ✅ Verified ${liveSubdomains.length} LIVE subdomains ready for global phases`, { agentLabel: "PHASE-1", type: "success" });
+      emitStdoutLog(scanData.scanId, `[PHASE 1] ✅ HTTPX verified ${liveSubdomains.length} LIVE subdomains`, { agentLabel: "PHASE-1", type: "success" });
       
       liveSubdomains.forEach((sub, idx) => {
         emitStdoutLog(scanData.scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`, { agentLabel: "PHASE-1" });
+        scanData.subdomainMetadata.set(sub, { urlCount: 0, vulnerabilityCount: 0 });
       });
+      
+      // Cleanup
+      try {
+        unlinkSync(httpxInputFile);
+      } catch {
+        // Ignore cleanup errors
+      }
     } else {
       emitStdoutLog(scanData.scanId, `[PHASE 1] ⚠️ No subdomains discovered`, { agentLabel: "PHASE-1", type: "warning" });
     }
@@ -223,12 +239,140 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
       // Ignore cleanup errors
     }
 
-    emitStdoutLog(scanData.scanId, `\n[PHASE 2] ✅ COMPLETE - Ready for PHASE 3 (Global Vuln Scan)`, { agentLabel: "PHASE-2", type: "success" });
+    emitStdoutLog(scanData.scanId, `\n[PHASE 2] ✅ COMPLETE - Ready for PHASE 2.5 (SQLMap on Parameters)`, { agentLabel: "PHASE-2", type: "success" });
     emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2" });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     scanData.errors.push(`Phase 2 failed: ${errorMsg}`);
-    emitStdoutLog(scanData.scanId, `[PHASE 2] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 3...`, { agentLabel: "PHASE-2", type: "error" });
+    emitStdoutLog(scanData.scanId, `[PHASE 2] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 2.5...`, { agentLabel: "PHASE-2", type: "error" });
+  }
+}
+
+/**
+ * Helper: Detect if URL has parameters (e.g., ?id=1, ?search=, etc.)
+ */
+function hasParameters(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.search.length > 0;
+  } catch {
+    return url.includes("?");
+  }
+}
+
+/**
+ * Helper: Detect if parameters look like command injection (cmd, exec, system, etc.)
+ */
+function hasCommandParams(url: string): boolean {
+  const commandKeywords = /(\?|&)(cmd|exec|command|system|os|shell|bash|sh|eval|code|func|action|op|operation)=/i;
+  return commandKeywords.test(url);
+}
+
+/**
+ * PHASE 2.5: SQLMap on URLs with Parameters
+ * Automatically trigger SQLMap on URLs with query parameters
+ */
+async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
+  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-2.5" });
+  emitStdoutLog(scanData.scanId, `[PHASE 2.5] SQLMAP ON PARAMETERS`, { agentLabel: "PHASE-2.5" });
+  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.5" });
+
+  try {
+    const urlsWithParams = scanData.urls.filter(hasParameters);
+    
+    if (urlsWithParams.length === 0) {
+      emitStdoutLog(scanData.scanId, `[PHASE 2.5] No URLs with parameters found. Skipping SQLMap...`, { agentLabel: "PHASE-2.5", type: "info" });
+      return;
+    }
+
+    emitStdoutLog(scanData.scanId, `[PHASE 2.5] Found ${urlsWithParams.length} URLs with parameters. Running SQLMap...`, { agentLabel: "PHASE-2.5" });
+
+    // Test first 10 URLs with parameters (light scan)
+    const urlsToTest = urlsWithParams.slice(0, 10);
+
+    for (let i = 0; i < urlsToTest.length; i++) {
+      const url = urlsToTest[i];
+      emitStdoutLog(scanData.scanId, `[PHASE 2.5] Testing [${i + 1}/${urlsToTest.length}] ${url}`, { agentLabel: "PHASE-2.5" });
+
+      const sqlmapOutput = await executeCommand(
+        scanData.scanId,
+        "sqlmap",
+        ["-u", url, "--batch", "--flush-session", "--random-agent", "--level=1", "--risk=1", "-q"],
+        "SQLMAP"
+      );
+
+      if (sqlmapOutput.toLowerCase().includes("vulnerable") || sqlmapOutput.toLowerCase().includes("injectable")) {
+        scanData.vulnerabilities.push({
+          title: "SQL Injection Vulnerability",
+          severity: "critical",
+          type: "sqli",
+          url: url,
+          description: `SQL injection detected via SQLMap`
+        });
+        emitStdoutLog(scanData.scanId, `[PHASE 2.5] 🚨 SQL INJECTION FOUND on ${url}`, { agentLabel: "PHASE-2.5", type: "finding" });
+      }
+    }
+
+    emitStdoutLog(scanData.scanId, `\n[PHASE 2.5] ✅ COMPLETE - Ready for PHASE 2.6 (Commix on Command Params)`, { agentLabel: "PHASE-2.5", type: "success" });
+    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.5" });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+    scanData.errors.push(`Phase 2.5 failed: ${errorMsg}`);
+    emitStdoutLog(scanData.scanId, `[PHASE 2.5] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 2.6...`, { agentLabel: "PHASE-2.5", type: "error" });
+  }
+}
+
+/**
+ * PHASE 2.6: Commix on Command-Like Parameters
+ * Automatically trigger Commix on URLs with command-like parameters
+ */
+async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> {
+  emitStdoutLog(scanData.scanId, `\n${'═'.repeat(80)}`, { agentLabel: "PHASE-2.6" });
+  emitStdoutLog(scanData.scanId, `[PHASE 2.6] COMMIX ON COMMAND PARAMETERS`, { agentLabel: "PHASE-2.6" });
+  emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.6" });
+
+  try {
+    const urlsWithCommandParams = scanData.urls.filter(hasCommandParams);
+    
+    if (urlsWithCommandParams.length === 0) {
+      emitStdoutLog(scanData.scanId, `[PHASE 2.6] No URLs with command parameters found. Skipping Commix...`, { agentLabel: "PHASE-2.6", type: "info" });
+      return;
+    }
+
+    emitStdoutLog(scanData.scanId, `[PHASE 2.6] Found ${urlsWithCommandParams.length} URLs with command parameters. Running Commix...`, { agentLabel: "PHASE-2.6" });
+
+    // Test first 5 URLs with command params (light scan)
+    const urlsToTest = urlsWithCommandParams.slice(0, 5);
+
+    for (let i = 0; i < urlsToTest.length; i++) {
+      const url = urlsToTest[i];
+      emitStdoutLog(scanData.scanId, `[PHASE 2.6] Testing [${i + 1}/${urlsToTest.length}] ${url}`, { agentLabel: "PHASE-2.6" });
+
+      const commixOutput = await executeCommand(
+        scanData.scanId,
+        "python3",
+        ["-m", "commix", "-u", url, "-q"],
+        "COMMIX"
+      );
+
+      if (commixOutput.toLowerCase().includes("vulnerable") || commixOutput.toLowerCase().includes("rce") || commixOutput.toLowerCase().includes("injection")) {
+        scanData.vulnerabilities.push({
+          title: "Remote Code Execution (RCE) / Command Injection",
+          severity: "critical",
+          type: "rce",
+          url: url,
+          description: `Command injection detected via Commix`
+        });
+        emitStdoutLog(scanData.scanId, `[PHASE 2.6] 🚨 RCE FOUND on ${url}`, { agentLabel: "PHASE-2.6", type: "finding" });
+      }
+    }
+
+    emitStdoutLog(scanData.scanId, `\n[PHASE 2.6] ✅ COMPLETE - Ready for PHASE 3 (Global Vuln Scan)`, { agentLabel: "PHASE-2.6", type: "success" });
+    emitStdoutLog(scanData.scanId, `${'═'.repeat(80)}\n`, { agentLabel: "PHASE-2.6" });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+    scanData.errors.push(`Phase 2.6 failed: ${errorMsg}`);
+    emitStdoutLog(scanData.scanId, `[PHASE 2.6] ⚠️ ERROR: ${errorMsg}. Continuing to Phase 3...`, { agentLabel: "PHASE-2.6", type: "error" });
   }
 }
 
@@ -392,8 +536,10 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
  * MAIN FULL DOMAIN-WIDE SCAN ORCHESTRATION
  * 
  * Global Execution Order:
- * 1. PHASE 1: Subdomain Discovery (returns ALL live subdomains)
+ * 1. PHASE 1: Subdomain Discovery with HTTPX (returns ALL live subdomains)
  * 2. PHASE 2: Global URL Crawling (Katana on ALL subdomains with -c 3)
+ * 2.5. PHASE 2.5: SQLMap on URLs with parameters
+ * 2.6. PHASE 2.6: Commix on URLs with command-like parameters
  * 3. PHASE 3: Global Vuln Scanning (Nuclei on ALL subdomains with -c 3)
  * 4. PHASE 4: Global XSS Testing (Dalfox on ALL discovered URLs)
  */
@@ -415,11 +561,11 @@ export async function runSequentialScan(
 
   emitStdoutLog(scanId, `\n${'█'.repeat(80)}`, { agentLabel: "SEQUENTIAL-SCAN" });
   emitStdoutLog(scanId, `[FULL DOMAIN-WIDE ENGINE] Starting comprehensive scan for ${target}`, { agentLabel: "SEQUENTIAL-SCAN" });
-  emitStdoutLog(scanId, `[FULL DOMAIN-WIDE ENGINE] Global phases: 1) Discovery → 2) Crawling → 3) Vuln Scan → 4) XSS Test`, { agentLabel: "SEQUENTIAL-SCAN" });
+  emitStdoutLog(scanId, `[FULL DOMAIN-WIDE ENGINE] Phases: 1) HTTPX Discovery → 2) Crawling → 2.5) SQLMap → 2.6) Commix → 3) Nuclei → 4) Dalfox`, { agentLabel: "SEQUENTIAL-SCAN" });
   emitStdoutLog(scanId, `${'█'.repeat(80)}\n`, { agentLabel: "SEQUENTIAL-SCAN" });
 
   try {
-    // PHASE 1: Discover all live subdomains
+    // PHASE 1: Discover all live subdomains with HTTPX
     await phase1SubdomainDiscovery(scanData);
     
     if (scanData.subdomains.length === 0) {
@@ -436,6 +582,12 @@ export async function runSequentialScan(
 
     // PHASE 2: Global URL crawling on all subdomains
     await phase2GlobalUrlCrawling(scanData);
+    
+    // PHASE 2.5: SQLMap on URLs with parameters
+    await phase2_5SqlmapOnParameters(scanData);
+    
+    // PHASE 2.6: Commix on URLs with command-like parameters
+    await phase2_6CommixOnCommandParams(scanData);
     
     // PHASE 3: Global vulnerability scanning on all subdomains
     await phase3GlobalVulnScanning(scanData);
