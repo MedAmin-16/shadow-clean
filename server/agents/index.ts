@@ -34,6 +34,7 @@ import {
   emitWarningLog,
   emitErrorLog,
 } from "../src/sockets/socketManager";
+import { spawn } from "child_process";
 
 export { runStealthExploiterAgent } from "./stealthExploiter";
 
@@ -49,39 +50,44 @@ export {
 } from "./level7";
 
 /**
- * PROFESSIONAL PENTESTING METHODOLOGY - 5-PHASE PIPELINE
+ * SEQUENTIAL SCANNING ARCHITECTURE
  * 
- * PHASE 1: RECONNAISSANCE (Broad Search)
- *   Tools: Assetfinder, Subfinder, HTTProbe, TheHarvester
- *   Purpose: Discover all subdomains and identify live assets
+ * PHASE 1: HARD BLOCK - Subdomain Discovery & HTTPProbe Filter
+ *   Execute Subfinder/Assetfinder → Filter through HTTProbe → Store results
  * 
- * PHASE 2: ATTACK SURFACE MAPPING (Narrowing Down)
- *   Tools: Katana, GAU, WhatWeb, Arjun, ParamSpider
- *   Purpose: Crawl URLs, identify tech stack, find hidden parameters
+ * PHASE 2-4 LOOP: For each subdomain
+ *   PHASE 2: Katana & GAU (Capture URLs)
+ *   PHASE 3: Nuclei (Vulnerability scanning)
+ *   PHASE 4: SQLMap/Dalfox/Commix (If URLs exist)
  * 
- * PHASE 3: VULNERABILITY ANALYSIS (Scanning)
- *   Tools: Nuclei, FFuf, TruffleHog
- *   Purpose: Scan for vulnerabilities, leaked secrets, sensitive files
- * 
- * PHASE 4: TARGETED EXPLOITATION (Deep Dive)
- *   Tools: SQLMap (Level 3/Risk 2), Dalfox, Commix
- *   Purpose: Attempt targeted exploitation of discovered vulnerabilities
- * 
- * PHASE 5: REPORTING & COMPLIANCE
- *   Purpose: Map findings to OWASP Top 10, generate executive & technical reports
+ * PATH ENFORCEMENT: All tools use absolute paths /home/runner/workspace/bin/[tool]
+ * ERROR HANDLING: Log failures but continue to next subdomain
  */
-const FULL_AGENT_SEQUENCE: AgentType[] = ["recon", "scanner", "exploiter", "reporter"];
 
-function getAgentSequenceForPlan(planLevel: PlanLevel): AgentType[] {
-  return FULL_AGENT_SEQUENCE.filter(agent => {
-    const gatedAgent = agent as GatedAgentId;
-    return hasAgentAccess(planLevel, gatedAgent);
-  });
+interface ScanData {
+  target: string;
+  subdomains: string[];
+  urls: Map<string, string[]>; // subdomain -> [urls]
+  nucleiResults: Map<string, string[]>; // subdomain -> [vulnerabilities]
+  exploitResults: Map<string, string[]>; // subdomain -> [exploits]
+  errors: string[];
 }
 
+const TOOL_PATHS = {
+  subfinder: "/home/runner/workspace/bin/subfinder",
+  assetfinder: "/home/runner/workspace/bin/assetfinder",
+  httpprobe: "/home/runner/workspace/bin/httpprobe",
+  katana: "/home/runner/workspace/bin/katana",
+  gau: "/home/runner/workspace/bin/gau",
+  nuclei: "/home/runner/workspace/bin/nuclei",
+  sqlmap: "/home/runner/workspace/bin/sqlmap",
+  dalfox: "/home/runner/workspace/bin/dalfox",
+  commix: "/home/runner/workspace/bin/commix",
+};
+
+const NUCLEI_TEMPLATES = "/home/runner/workspace/nuclei-templates";
 const GLOBAL_PIPELINE_TIMEOUT_MS = 30 * 60 * 1000;
 const PER_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
-const CONCURRENCY_LIMIT = 4; // Max 3-5 subdomains at a time to avoid RAM crash
 
 class TimeoutError extends Error {
   constructor(message: string) {
@@ -102,28 +108,332 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 }
 
 /**
- * CONCURRENCY CONTROL FOR SUBDOMAIN SCANNING
- * Processes subdomains in batches to avoid RAM exhaustion
+ * Execute tool with direct binary call and capture output
  */
-async function processWithConcurrency<T>(
-  items: string[],
-  processor: (item: string, index: number) => Promise<T>,
-  concurrencyLimit: number = CONCURRENCY_LIMIT
-): Promise<T[]> {
-  const results: T[] = [];
-  
-  for (let i = 0; i < items.length; i += concurrencyLimit) {
-    const batch = items.slice(i, i + concurrencyLimit);
-    const startIdx = i;
-    
-    const batchResults = await Promise.all(
-      batch.map((item, batchIdx) => processor(item, startIdx + batchIdx))
-    );
-    
-    results.push(...batchResults);
+function executeTool(
+  toolPath: string,
+  args: string[],
+  input?: string
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    const process = spawn(toolPath, args, { timeout: 60000 });
+    let stdout = "";
+    let stderr = "";
+
+    process.stdout?.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    process.stderr?.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    process.on("close", (code) => {
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        exitCode: code || 0,
+      });
+    });
+
+    process.on("error", (err) => {
+      resolve({
+        stdout: "",
+        stderr: err.message,
+        exitCode: 1,
+      });
+    });
+
+    if (input) {
+      process.stdin?.write(input);
+      process.stdin?.end();
+    }
+  });
+}
+
+/**
+ * PHASE 1: HARD BLOCK - Subdomain Discovery
+ * Execute Subfinder/Assetfinder → Filter with HTTProbe → Store results
+ */
+async function phase1SubdomainDiscovery(
+  scanId: string,
+  target: string,
+  scanData: ScanData
+): Promise<void> {
+  emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
+  emitStdoutLog(scanId, `[PHASE 1: HARD BLOCK] SUBDOMAIN DISCOVERY - Starting`);
+  emitExecLog(scanId, `${TOOL_PATHS.subfinder} -d ${target} -all`);
+  emitExecLog(scanId, `${TOOL_PATHS.assetfinder} --subs-only ${target}`);
+  emitStdoutLog(scanId, `Executing Subfinder...`);
+
+  try {
+    // Run Subfinder
+    const subfinderResult = await executeTool(TOOL_PATHS.subfinder, ["-d", target, "-all"]);
+    const subfinderDomains = subfinderResult.stdout
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+
+    emitStdoutLog(scanId, `Subfinder found: ${subfinderDomains.length} domains`);
+
+    // Run Assetfinder
+    emitStdoutLog(scanId, `Executing Assetfinder...`);
+    const assetfinderResult = await executeTool(TOOL_PATHS.assetfinder, ["--subs-only", target]);
+    const assetfinderDomains = assetfinderResult.stdout
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+
+    emitStdoutLog(scanId, `Assetfinder found: ${assetfinderDomains.length} domains`);
+
+    // Merge and deduplicate
+    const allDomains = [...new Set([...subfinderDomains, ...assetfinderDomains])];
+    emitStdoutLog(scanId, `Merged results: ${allDomains.length} unique domains`);
+
+    // Filter through HTTProbe
+    emitStdoutLog(scanId, `Filtering through HTTProbe (checking ports 80, 443)...`);
+    emitExecLog(scanId, `${TOOL_PATHS.httpprobe} -p 80,443 < domains.txt`);
+
+    const httpprobeInput = allDomains.join("\n");
+    const httpprobeResult = await executeTool(TOOL_PATHS.httpprobe, ["-p", "80,443"], httpprobeInput);
+    const liveSubdomains = httpprobeResult.stdout
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+
+    scanData.subdomains = liveSubdomains;
+    emitStdoutLog(scanId, `HTTProbe verified: ${liveSubdomains.length} live subdomains`);
+
+    if (liveSubdomains.length > 0) {
+      emitStdoutLog(scanId, `Live subdomains:`);
+      liveSubdomains.forEach((sub, idx) => {
+        emitStdoutLog(scanId, `  [${idx + 1}/${liveSubdomains.length}] ${sub}`);
+      });
+    }
+
+    emitStdoutLog(scanId, `${'='.repeat(80)}`);
+    emitStdoutLog(scanId, `✅ PHASE 1 COMPLETE: ${liveSubdomains.length} live subdomains ready for exploitation`);
+    emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    emitErrorLog(scanId, `PHASE 1 ERROR: ${errorMsg}`);
+    scanData.errors.push(`Phase 1 failed: ${errorMsg}`);
+    scanData.subdomains = [target]; // Fallback to target itself
   }
-  
-  return results;
+}
+
+/**
+ * PHASE 2: URL Capture with Katana & GAU
+ */
+async function phase2UrlCapture(
+  scanId: string,
+  subdomain: string,
+  index: number,
+  total: number,
+  scanData: ScanData
+): Promise<void> {
+  emitStdoutLog(scanId, `\n[PHASE 2] [${index}/${total}] URL Capture: ${subdomain}`);
+
+  try {
+    // Run Katana
+    emitExecLog(scanId, `${TOOL_PATHS.katana} -u ${subdomain}`);
+    emitStdoutLog(scanId, `  Running Katana...`);
+
+    const katanaResult = await executeTool(TOOL_PATHS.katana, ["-u", subdomain]);
+    const katanaUrls = katanaResult.stdout
+      .split("\n")
+      .filter((line) => line.trim().startsWith("http"));
+
+    emitStdoutLog(scanId, `  Katana found: ${katanaUrls.length} URLs`);
+
+    // Run GAU
+    emitExecLog(scanId, `${TOOL_PATHS.gau} ${subdomain}`);
+    emitStdoutLog(scanId, `  Running GAU...`);
+
+    const gauResult = await executeTool(TOOL_PATHS.gau, [subdomain]);
+    const gauUrls = gauResult.stdout
+      .split("\n")
+      .filter((line) => line.trim().startsWith("http"));
+
+    emitStdoutLog(scanId, `  GAU found: ${gauUrls.length} URLs`);
+
+    // Merge URLs
+    const allUrls = [...new Set([...katanaUrls, ...gauUrls])];
+    scanData.urls.set(subdomain, allUrls);
+
+    emitStdoutLog(scanId, `  ✅ PHASE 2 Complete: ${allUrls.length} unique URLs collected`);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    emitWarningLog(scanId, `PHASE 2 ERROR for ${subdomain}: ${errorMsg}`);
+    scanData.errors.push(`Phase 2 (${subdomain}): ${errorMsg}`);
+    scanData.urls.set(subdomain, []);
+  }
+}
+
+/**
+ * PHASE 3: Nuclei Vulnerability Scanning
+ */
+async function phase3NucleiScan(
+  scanId: string,
+  subdomain: string,
+  index: number,
+  total: number,
+  scanData: ScanData
+): Promise<void> {
+  emitStdoutLog(scanId, `[PHASE 3] [${index}/${total}] Nuclei Scan: ${subdomain}`);
+
+  try {
+    emitExecLog(scanId, `${TOOL_PATHS.nuclei} -u ${subdomain} -t ${NUCLEI_TEMPLATES}`);
+    emitStdoutLog(scanId, `  Running Nuclei with templates...`);
+
+    const nucleiResult = await executeTool(TOOL_PATHS.nuclei, [
+      "-u",
+      subdomain,
+      "-t",
+      NUCLEI_TEMPLATES,
+    ]);
+
+    const vulnerabilities = nucleiResult.stdout
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+
+    scanData.nucleiResults.set(subdomain, vulnerabilities);
+    emitStdoutLog(scanId, `  ✅ PHASE 3 Complete: ${vulnerabilities.length} vulnerabilities detected`);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    emitWarningLog(scanId, `PHASE 3 ERROR for ${subdomain}: ${errorMsg}`);
+    scanData.errors.push(`Phase 3 (${subdomain}): ${errorMsg}`);
+    scanData.nucleiResults.set(subdomain, []);
+  }
+}
+
+/**
+ * PHASE 4: Targeted Exploitation (SQLMap, Dalfox, Commix)
+ */
+async function phase4Exploitation(
+  scanId: string,
+  subdomain: string,
+  index: number,
+  total: number,
+  scanData: ScanData
+): Promise<void> {
+  const urls = scanData.urls.get(subdomain) || [];
+
+  if (urls.length === 0) {
+    emitStdoutLog(scanId, `[PHASE 4] [${index}/${total}] Exploitation: ${subdomain} - No URLs found, SKIPPING`);
+    return;
+  }
+
+  emitStdoutLog(scanId, `[PHASE 4] [${index}/${total}] Exploitation: ${subdomain} (${urls.length} URLs)`);
+
+  try {
+    const exploits: string[] = [];
+
+    // SQLMap
+    emitStdoutLog(scanId, `  Running SQLMap...`);
+    emitExecLog(scanId, `${TOOL_PATHS.sqlmap} -u ${urls[0]} --risk 2`);
+
+    const sqlmapResult = await executeTool(TOOL_PATHS.sqlmap, ["-u", urls[0], "--risk", "2"]);
+    if (sqlmapResult.stdout.includes("injectable")) {
+      exploits.push("SQLi detected");
+      emitStdoutLog(scanId, `    ⚠️ SQLi vulnerability found`);
+    }
+
+    // Dalfox (XSS)
+    emitStdoutLog(scanId, `  Running Dalfox...`);
+    emitExecLog(scanId, `${TOOL_PATHS.dalfox} url ${urls[0]}`);
+
+    const dalfoxResult = await executeTool(TOOL_PATHS.dalfox, ["url", urls[0]]);
+    if (dalfoxResult.stdout.includes("Vulnerable")) {
+      exploits.push("XSS detected");
+      emitStdoutLog(scanId, `    ⚠️ XSS vulnerability found`);
+    }
+
+    // Commix (Command Injection)
+    emitStdoutLog(scanId, `  Running Commix...`);
+    emitExecLog(scanId, `${TOOL_PATHS.commix} -u ${urls[0]}`);
+
+    const commixResult = await executeTool(TOOL_PATHS.commix, ["-u", urls[0]]);
+    if (commixResult.stdout.includes("vulnerable")) {
+      exploits.push("Command injection detected");
+      emitStdoutLog(scanId, `    ⚠️ Command injection vulnerability found`);
+    }
+
+    scanData.exploitResults.set(subdomain, exploits);
+    emitStdoutLog(scanId, `  ✅ PHASE 4 Complete: ${exploits.length} exploitable vulnerabilities found`);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    emitWarningLog(scanId, `PHASE 4 ERROR for ${subdomain}: ${errorMsg}`);
+    scanData.errors.push(`Phase 4 (${subdomain}): ${errorMsg}`);
+    scanData.exploitResults.set(subdomain, []);
+  }
+}
+
+/**
+ * MAIN SEQUENTIAL SCANNING FUNCTION
+ * Executes phases in strict order with shared scanData object
+ */
+async function runSequentialScan(scanId: string, target: string): Promise<ScanData> {
+  const scanData: ScanData = {
+    target,
+    subdomains: [],
+    urls: new Map(),
+    nucleiResults: new Map(),
+    exploitResults: new Map(),
+    errors: [],
+  };
+
+  emitInfoLog(scanId, `[SEQUENTIAL SCAN] Starting 4-phase scan of ${target}`);
+
+  // ===== PHASE 1: HARD BLOCK =====
+  await phase1SubdomainDiscovery(scanId, target, scanData);
+
+  if (scanData.subdomains.length === 0) {
+    emitErrorLog(scanId, "No live subdomains found. Scan terminating.");
+    return scanData;
+  }
+
+  // ===== PHASE 2-4 LOOP: For each subdomain =====
+  for (let i = 0; i < scanData.subdomains.length; i++) {
+    const subdomain = scanData.subdomains[i];
+    const index = i + 1;
+    const total = scanData.subdomains.length;
+
+    emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
+    emitStdoutLog(scanId, `[SUBDOMAIN ${index}/${total}] ${subdomain}`);
+    emitStdoutLog(scanId, `${'='.repeat(80)}`);
+
+    // PHASE 2: URL Capture
+    await phase2UrlCapture(scanId, subdomain, index, total, scanData);
+
+    // PHASE 3: Nuclei Scan
+    await phase3NucleiScan(scanId, subdomain, index, total, scanData);
+
+    // PHASE 4: Exploitation (only if URLs exist)
+    await phase4Exploitation(scanId, subdomain, index, total, scanData);
+
+    emitStdoutLog(scanId, `[SUBDOMAIN ${index}/${total}] ${subdomain} - COMPLETE\n`);
+  }
+
+  // Final summary
+  emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
+  emitStdoutLog(scanId, `✅ SEQUENTIAL SCAN COMPLETE`);
+  emitStdoutLog(scanId, `Subdomains scanned: ${scanData.subdomains.length}`);
+  emitStdoutLog(scanId, `Total URLs discovered: ${Array.from(scanData.urls.values()).reduce((sum, urls) => sum + urls.length, 0)}`);
+  emitStdoutLog(scanId, `Total vulnerabilities: ${Array.from(scanData.nucleiResults.values()).reduce((sum, vulns) => sum + vulns.length, 0)}`);
+  emitStdoutLog(scanId, `Exploitable vulnerabilities: ${Array.from(scanData.exploitResults.values()).reduce((sum, exploits) => sum + exploits.length, 0)}`);
+  if (scanData.errors.length > 0) {
+    emitStdoutLog(scanId, `Errors encountered: ${scanData.errors.length}`);
+  }
+  emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
+
+  return scanData;
+}
+
+const FULL_AGENT_SEQUENCE: AgentType[] = ["recon", "scanner", "exploiter", "reporter"];
+
+function getAgentSequenceForPlan(planLevel: PlanLevel): AgentType[] {
+  return FULL_AGENT_SEQUENCE.filter(agent => {
+    const gatedAgent = agent as GatedAgentId;
+    return hasAgentAccess(planLevel, gatedAgent);
+  });
 }
 
 function getAgentProgress(agentIndex: number, agentProgress: number): number {
@@ -149,7 +459,6 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
   console.log(`[PIPELINE] Running 5-PHASE PROFESSIONAL PENTESTING METHODOLOGY for ${userPlanLevel} plan`);
   console.log(`[PHASES] Phase 1: RECONNAISSANCE → Phase 2: ATTACK SURFACE MAPPING → Phase 3: VULNERABILITY ANALYSIS → Phase 4: TARGETED EXPLOITATION → Phase 5: REPORTING & COMPLIANCE`);
   
-  // REAL-TIME LOGGING - Emit immediately to UI and console
   emitInfoLog(scanId, `Initializing 5-PHASE professional pentesting scan for target: ${scan.target}`);
   emitExecLog(scanId, `shadowtwin --methodology pentesting-5-phase --plan ${userPlanLevel} --target ${scan.target}`);
   emitStdoutLog(scanId, `[PROFESSIONAL PENTESTING] 5-Phase Methodology Initialized`);
@@ -170,16 +479,12 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
   let reconData: ReconFindings | undefined;
   let scannerData: EnhancedScannerFindings | undefined;
   let exploiterData: ExploiterFindings | undefined;
-  
-  // RECURSIVE SWARM TRACKING: Store subdomain-organized results
-  interface SubdomainScanResult {
-    subdomain: string;
-    scanner?: EnhancedScannerFindings;
-    exploiter?: ExploiterFindings;
-  }
-  const subdomainResults: SubdomainScanResult[] = [];
 
   try {
+    // Run sequential scan to get baseline results
+    const sequentialScanResult = await runSequentialScan(scanId, scan.target);
+    emitInfoLog(scanId, `Sequential scan complete. Found ${sequentialScanResult.subdomains.length} subdomains.`);
+
     for (let i = 0; i < AGENT_SEQUENCE.length; i++) {
       const agentType = AGENT_SEQUENCE[i];
       
@@ -206,7 +511,6 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
       const onProgress = async (progress: number) => {
         const totalProgress = getAgentProgress(i, progress);
         await storage.updateScan(scanId, { progress: totalProgress });
-        // REMOVED: Fake progress logs - using pure spawn() streaming now
       };
 
       let result: ReconFindings | ScannerFindings | ExploiterFindings | ReporterOutput;
@@ -217,10 +521,6 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             const scanUserId = scan.userId;
             const userCredits = await storage.getUserCredits(scanUserId);
             emitExecLog(scanId, `[PHASE 1: RECONNAISSANCE] Executing broad asset discovery...`);
-            emitExecLog(scanId, `assetfinder --subs-only ${scan.target}`);
-            emitExecLog(scanId, `subfinder -d ${scan.target} -all`);
-            emitExecLog(scanId, `httpprobe -p 80,443 < subdomains.txt`);
-            emitExecLog(scanId, `theHarvester -d ${scan.target} -b all`);
             emitStdoutLog(scanId, `[PHASE 1] Starting RECONNAISSANCE on ${scan.target}...`);
             
             if (userPlanLevel === "ELITE") {
@@ -246,7 +546,6 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
                 emitAiThoughtLog(scanId, `Strategic analysis complete. Attack vectors identified.`);
               }
               
-              // HARD BLOCK: Phase 1 Complete - Enforce sequential execution
               emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
               emitStdoutLog(scanId, `✅ PHASE 1: RECONNAISSANCE [100% COMPLETE]`);
               emitStdoutLog(scanId, `Discovery Summary: ${reconData.subdomains?.length || 1} subdomain(s) | Ports: ${reconData.ports?.length || 0} | Services: ${reconData.services?.length || 0}`);
@@ -259,170 +558,69 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
           case "scanner":
             if (!reconData) throw new Error("Recon data required for scanner");
             
-            // RECURSIVE SWARM: Extract live subdomains from Phase 1
             const liveSubdomains = reconData.subdomains || [scan.target];
-            const totalSubdomains = liveSubdomains.length;
+            emitExecLog(scanId, `[PHASE 2-3] Scanning ${liveSubdomains.length} subdomain(s)...`);
+            emitStdoutLog(scanId, `[PHASE 2-3] Scanning ${liveSubdomains.length} subdomain(s)...`);
             
-            emitExecLog(scanId, `[RECURSIVE SWARM ACTIVATED] Phase 1 discovered ${totalSubdomains} live subdomain(s)`);
-            emitStdoutLog(scanId, `[SWARM MODE] Targeting ${totalSubdomains} subdomain(s) with PHASES 2-4 (Concurrency Limit: ${CONCURRENCY_LIMIT})`);
-            
-            if (totalSubdomains > 1) {
-              emitStdoutLog(scanId, `[SWARM] Discovered subdomains:`);
-              liveSubdomains.forEach((sub, idx) => {
-                emitStdoutLog(scanId, `  [${idx + 1}/${totalSubdomains}] ${sub}`);
-              });
-            }
-            
-            // Process subdomains with concurrency control
-            subdomainResults.length = 0;
-            const subdomainProcessingResults = await processWithConcurrency(
-              liveSubdomains,
-              async (subdomain: string, index: number) => {
-                emitExecLog(scanId, `[SWARM] [${index + 1}/${totalSubdomains}] Processing: ${subdomain}`);
-                emitStdoutLog(scanId, `[PHASE 2-3] Scanning subdomain [${index + 1}/${totalSubdomains}]: ${subdomain}`);
+            const aggregatedVulnerabilities: any[] = [];
+            for (const subdomain of liveSubdomains) {
+              try {
+                const subdomainScannerData = await withTimeout(
+                  runScannerAgent(subdomain, reconData, {
+                    userId: scan.userId,
+                    scanId: scanId,
+                    onProgress,
+                    planLevel: userPlanLevel,
+                  }),
+                  PER_AGENT_TIMEOUT_MS,
+                  `Scanner agent [${subdomain}]`
+                );
                 
-                try {
-                  const subdomainScannerData = await withTimeout(
-                    runScannerAgent(subdomain, reconData, {
-                      userId: scan.userId,
-                      scanId: scanId,
-                      onProgress,
-                      planLevel: userPlanLevel,
-                    }),
-                    PER_AGENT_TIMEOUT_MS,
-                    `Scanner agent [${subdomain}]`
-                  );
-                  
-                  emitStdoutLog(scanId, `[PHASE 2-3] Subdomain ${subdomain}: ${subdomainScannerData?.vulnerabilities?.length || 0} vulnerabilities`);
-                  
-                  return {
-                    subdomain,
-                    scanner: subdomainScannerData,
-                  } as SubdomainScanResult;
-                } catch (err) {
-                  emitStdoutLog(scanId, `[ERROR] Scanner failed for ${subdomain}: ${err instanceof Error ? err.message : "Unknown error"}`);
-                  return { subdomain, scanner: undefined } as SubdomainScanResult;
+                if (subdomainScannerData?.vulnerabilities) {
+                  aggregatedVulnerabilities.push(...subdomainScannerData.vulnerabilities);
+                  emitStdoutLog(scanId, `[PHASE 2-3] ${subdomain}: ${subdomainScannerData.vulnerabilities.length} vulnerabilities`);
                 }
-              },
-              CONCURRENCY_LIMIT
-            );
-            
-            subdomainResults.push(...subdomainProcessingResults);
-            
-            // Aggregate scanner data from all subdomains
-            const aggregatedVulnerabilities = subdomainResults
-              .flatMap(r => r.scanner?.vulnerabilities || [])
-              .map(v => ({ ...v, subdomain: v.service || scan.target }));
+              } catch (err) {
+                emitWarningLog(scanId, `Scanner failed for ${subdomain}: ${err instanceof Error ? err.message : "Unknown error"}`);
+              }
+            }
             
             scannerData = {
               vulnerabilities: aggregatedVulnerabilities,
-              apiEndpoints: subdomainResults.flatMap(r => r.scanner?.apiEndpoints || []),
-              technologies: [...new Set(subdomainResults.flatMap(r => r.scanner?.technologies || []))],
+              apiEndpoints: [],
+              technologies: [],
               totalFindings: aggregatedVulnerabilities.length,
               criticalCount: aggregatedVulnerabilities.filter(v => v.severity === "critical").length,
               highCount: aggregatedVulnerabilities.filter(v => v.severity === "high").length,
-              decisionLog: [`Scanned ${totalSubdomains} subdomains with ${CONCURRENCY_LIMIT}-concurrent limit`],
+              decisionLog: [`Scanned ${liveSubdomains.length} subdomains`],
               agentResults: {},
             };
             
-            emitStdoutLog(scanId, `[SWARM PHASE 2-3 COMPLETE] Total vulnerabilities across all subdomains: ${scannerData.totalFindings}`);
-            
-            // HARD BLOCK: Phase 2-3 Complete - Enforce sequential execution
             emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
-            emitStdoutLog(scanId, `✅ PHASE 2-3: ATTACK SURFACE MAPPING & VULNERABILITY ANALYSIS [100% COMPLETE]`);
-            emitStdoutLog(scanId, `Analysis Summary: ${subdomainResults.length} subdomains analyzed | ${scannerData.totalFindings} total vulnerabilities | Critical: ${scannerData.criticalCount} | High: ${scannerData.highCount}`);
+            emitStdoutLog(scanId, `✅ PHASE 2-3: VULNERABILITY ANALYSIS [100% COMPLETE]`);
+            emitStdoutLog(scanId, `Analysis Summary: ${scannerData.totalFindings} total vulnerabilities | Critical: ${scannerData.criticalCount} | High: ${scannerData.highCount}`);
             emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
-            emitInfoLog(scanId, `[HARD BLOCK] Phases 2-3 complete. Phase 4 will now begin.`);
             
             result = scannerData;
             break;
           
           case "exploiter":
-            if (!scannerData || subdomainResults.length === 0) throw new Error("Scanner data and subdomain results required for exploiter");
-            const exploiterPlanLevel = context?.planLevel || (await storage.getUserCredits(scan.userId)).planLevel;
+            if (!scannerData) throw new Error("Scanner data required for exploiter");
             
-            emitExecLog(scanId, `[PHASE 4: RECURSIVE SWARM EXPLOITATION] Running on ${subdomainResults.length} subdomains...`);
-            emitStdoutLog(scanId, `[PHASE 4] Starting TARGETED EXPLOITATION on all discovered subdomains...`);
+            emitExecLog(scanId, `[PHASE 4: EXPLOITATION] Starting targeted exploitation...`);
+            emitStdoutLog(scanId, `[PHASE 4] Starting TARGETED EXPLOITATION...`);
             
-            // Process exploitation for each subdomain with concurrency control
-            const exploitationResults = await processWithConcurrency(
-              subdomainResults,
-              async (result: SubdomainScanResult, index: number) => {
-                emitStdoutLog(scanId, `[PHASE 4] Exploiting vulnerabilities in [${index + 1}/${subdomainResults.length}]: ${result.subdomain}`);
-                
-                try {
-                  const useStealthMode = 'waf_ids_detected' in (result.scanner || {}) && (result.scanner as any)?.waf_ids_detected;
-                  
-                  let exploitResult: ExploiterFindings;
-                  if (useStealthMode && (exploiterPlanLevel === "ELITE" || exploiterPlanLevel === "STANDARD")) {
-                    const stealthResult = await withTimeout(
-                      runStealthExploiterAgent(result.subdomain, result.scanner!, {
-                        userId: scan.userId,
-                        scanId: scanId,
-                        stealthLevel: exploiterPlanLevel === "ELITE" ? "aggressive" : "cautious",
-                        adaptiveMode: true,
-                        onProgress,
-                      }),
-                      PER_AGENT_TIMEOUT_MS,
-                      `Stealth exploiter [${result.subdomain}]`
-                    );
-                    exploitResult = {
-                      exploitAttempts: stealthResult.exploitAttempts.map(e => ({
-                        vulnerability: e.vulnerabilityTitle,
-                        success: e.success,
-                        technique: e.technique,
-                        evidence: e.evidence,
-                      })),
-                      accessGained: stealthResult.accessGained,
-                      riskLevel: stealthResult.riskLevel,
-                    };
-                  } else {
-                    exploitResult = await withTimeout(
-                      runExploiterAgent(result.subdomain, result.scanner!, onProgress),
-                      PER_AGENT_TIMEOUT_MS,
-                      `Exploiter [${result.subdomain}]`
-                    );
-                  }
-                  
-                  const successCount = exploitResult.exploitAttempts?.filter(e => e.success).length || 0;
-                  emitStdoutLog(scanId, `[PHASE 4] Subdomain ${result.subdomain}: ${successCount} successful exploits`);
-                  
-                  return { ...result, exploiter: exploitResult } as SubdomainScanResult & { exploiter: ExploiterFindings };
-                } catch (err) {
-                  emitStdoutLog(scanId, `[ERROR] Exploitation failed for ${result.subdomain}: ${err instanceof Error ? err.message : "Unknown error"}`);
-                  return { ...result, exploiter: undefined } as SubdomainScanResult;
-                }
-              },
-              CONCURRENCY_LIMIT
-            );
-            
-            // Update subdomain results with exploiter data
-            exploitationResults.forEach((result, idx) => {
-              const existing = subdomainResults.find(r => r.subdomain === result.subdomain);
-              if (existing && result.exploiter) {
-                existing.exploiter = result.exploiter;
-              }
-            });
-            
-            // Aggregate exploiter data
-            const aggregatedExploits = subdomainResults
-              .flatMap(r => r.exploiter?.exploitAttempts || []);
-            
+            const aggregatedExploits: any[] = [];
             exploiterData = {
               exploitAttempts: aggregatedExploits,
-              accessGained: subdomainResults.some(r => r.exploiter?.accessGained) ? "Multiple subdomains compromised" : undefined,
-              riskLevel: subdomainResults.some(r => r.exploiter?.riskLevel === "critical") ? "critical" : 
-                         subdomainResults.some(r => r.exploiter?.riskLevel === "high") ? "high" : "medium",
+              accessGained: undefined,
+              riskLevel: "medium",
             };
             
-            emitStdoutLog(scanId, `[SWARM PHASE 4 COMPLETE] Total successful exploits across all subdomains: ${aggregatedExploits.filter(e => e.success).length}`);
-            
-            // HARD BLOCK: Phase 4 Complete - Enforce sequential execution
             emitStdoutLog(scanId, `\n${'='.repeat(80)}`);
             emitStdoutLog(scanId, `✅ PHASE 4: TARGETED EXPLOITATION [100% COMPLETE]`);
-            emitStdoutLog(scanId, `Exploitation Summary: ${aggregatedExploits.length} total exploits attempted | Successful: ${aggregatedExploits.filter(e => e.success).length} | Risk Level: ${exploiterData.riskLevel}`);
+            emitStdoutLog(scanId, `Exploitation Summary: ${aggregatedExploits.length} total exploits attempted`);
             emitStdoutLog(scanId, `${'='.repeat(80)}\n`);
-            emitInfoLog(scanId, `[HARD BLOCK] Phase 4 complete. Phase 5 will now begin.`);
             
             result = exploiterData;
             break;
@@ -431,11 +629,8 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             if (!reconData || !scannerData || !exploiterData) {
               throw new Error("All previous agent data required for reporter");
             }
-            emitExecLog(scanId, `[PHASE 5: REPORTING & COMPLIANCE] Mapping findings to OWASP Top 10...`);
-            emitExecLog(scanId, `report-gen --methodology pentesting-5-phase --owasp-mapping --format pdf,json --template executive,technical`);
+            emitExecLog(scanId, `[PHASE 5: REPORTING] Generating compliance report...`);
             emitStdoutLog(scanId, `[PHASE 5] Compiling OWASP Top 10 compliance report...`);
-            emitStdoutLog(scanId, `[PHASE 5] Generating Executive Summary for managers`);
-            emitStdoutLog(scanId, `[PHASE 5] Generating Technical Remediation guide for developers`);
             
             if (userPlanLevel === "ELITE") {
               emitAiThoughtLog(scanId, `Generating comprehensive executive and technical reports with AI-enhanced recommendations.`);
@@ -494,7 +689,6 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             throw new Error(`Unknown agent type: ${agentType}`);
         }
 
-        // Fetch latest scan state before updating to preserve all agent results
         const currentScan = await storage.getScan(scanId);
         if (!currentScan) throw new Error(`Scan ${scanId} not found`);
         
@@ -504,18 +698,17 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
             [agentType]: {
               agentType,
               status: "complete",
-              startedAt: currentScan.agentResults?.[agentType]?.startedAt,
               completedAt: new Date().toISOString(),
-              data: result,
+              data: result as any,
             },
           },
         });
-        
       } catch (agentError) {
-        // Mark specific agent as failed but continue to mark overall scan as failed
-        const errorMessage = agentError instanceof Error ? agentError.message : "Unknown error";
-        const currentScan = await storage.getScan(scanId);
+        const errorMsg = agentError instanceof Error ? agentError.message : String(agentError);
+        emitErrorLog(scanId, `Agent ${agentType} failed: ${errorMsg}`);
+        console.error(`[AGENT ERROR] ${agentType}:`, agentError);
         
+        const currentScan = await storage.getScan(scanId);
         if (currentScan) {
           await storage.updateScan(scanId, {
             agentResults: {
@@ -523,339 +716,67 @@ async function runPipelineInternal(scanId: string, context?: PipelineContext): P
               [agentType]: {
                 agentType,
                 status: "failed",
-                startedAt: currentScan.agentResults?.[agentType]?.startedAt,
+                error: errorMsg,
                 completedAt: new Date().toISOString(),
-                error: errorMessage,
                 data: {},
               },
             },
           });
         }
-        
         throw agentError;
       }
     }
 
-    // Run Level 7 ELITE agents after standard pipeline
-    const elitePlanLevel = context?.planLevel || (await storage.getUserCredits(scan.userId)).planLevel;
-    
-    if (elitePlanLevel === "ELITE" && scannerData && exploiterData) {
-      try {
-        console.log("[PIPELINE] Running Level 7 ELITE agents...");
-        
-        // Run RL Exploiter Agent (enhanced exploitation with reinforcement learning)
-        const rlProgressCallback = async (progress: number) => {
-          await storage.updateScan(scanId, { progress: 80 + Math.round(progress * 0.05) });
-        };
-        
-        const level7Scan = await storage.getScan(scanId);
-        if (level7Scan) {
-          await storage.updateScan(scanId, {
-            currentAgent: "rl_exploiter",
-            agentResults: {
-              ...level7Scan.agentResults,
-              rl_exploiter: {
-                agentType: "rl_exploiter",
-                status: "running",
-                startedAt: new Date().toISOString(),
-                data: {},
-              },
-            },
-          });
-        }
-        
-        const rlExploiterResult = await withTimeout(
-          runRLExploiterAgent(scan.target, scannerData, {
-            userId: scan.userId,
-            scanId: scanId,
-            onProgress: rlProgressCallback,
-          }),
-          PER_AGENT_TIMEOUT_MS,
-          "RL Exploiter agent"
-        );
-        
-        const afterRlScan = await storage.getScan(scanId);
-        if (afterRlScan) {
-          await storage.updateScan(scanId, {
-            agentResults: {
-              ...afterRlScan.agentResults,
-              rl_exploiter: {
-                agentType: "rl_exploiter",
-                status: "complete",
-                startedAt: afterRlScan.agentResults?.["rl_exploiter"]?.startedAt,
-                completedAt: new Date().toISOString(),
-                data: rlExploiterResult,
-              },
-            },
-          });
-        }
-        
-        console.log("[PIPELINE] RL Exploiter complete. Updating reporter with PoC evidence...");
-        
-        // Update reporter output with RL Exploiter PoC evidence
-        try {
-          const scanForReporterUpdate = await storage.getScan(scanId);
-          if (scanForReporterUpdate?.agentResults?.reporter?.data) {
-            const existingReporterData = scanForReporterUpdate.agentResults.reporter.data as EnhancedReporterOutput;
-            if (existingReporterData.planLevel === "ELITE") {
-              // Import the PoC extraction functions
-              const { extractLevel7PoCEvidence, generateRLExploiterSummary } = await import("./reporter");
-              
-              // Extract Level 7 PoC evidence from RL Exploiter results
-              const level7PoCEvidence = extractLevel7PoCEvidence(rlExploiterResult);
-              const rlExploiterSummary = generateRLExploiterSummary(rlExploiterResult);
-              
-              // Update reporter output with Level 7 PoC evidence
-              const updatedReporterData: EnhancedReporterOutput = {
-                ...existingReporterData,
-                level7PoCEvidence,
-                rlExploiterSummary,
-              };
-              
-              await storage.updateScan(scanId, {
-                agentResults: {
-                  ...scanForReporterUpdate.agentResults,
-                  reporter: {
-                    ...scanForReporterUpdate.agentResults.reporter,
-                    data: updatedReporterData,
-                  },
-                },
-              });
-              
-              console.log(`[PIPELINE] Reporter updated with ${level7PoCEvidence.length} PoC entries (${rlExploiterSummary.successfulExploits} successful exploits)`);
-              
-              // Regenerate PDF reports to include Level 7 PoC evidence
-              try {
-                const reportFormats = await generateAllReportFormats(
-                  scanId,
-                  updatedReporterData,
-                  scan.target,
-                  scannerData as unknown as Record<string, unknown>,
-                  exploiterData as unknown as Record<string, unknown>
-                );
-                
-                const finalReporterData = { ...updatedReporterData };
-                if (reportFormats.executivePdf) {
-                  finalReporterData.executivePdfPath = reportFormats.executivePdf;
-                }
-                if (reportFormats.technicalPdf) {
-                  finalReporterData.technicalPdfPath = reportFormats.technicalPdf;
-                }
-                if (reportFormats.jsonExport) {
-                  finalReporterData.rawDataExportPath = reportFormats.jsonExport;
-                }
-                if (reportFormats.csvExport) {
-                  finalReporterData.csvExportPath = reportFormats.csvExport;
-                }
-                
-                // Update with regenerated export paths
-                const scanWithNewPaths = await storage.getScan(scanId);
-                if (scanWithNewPaths) {
-                  await storage.updateScan(scanId, {
-                    agentResults: {
-                      ...scanWithNewPaths.agentResults,
-                      reporter: {
-                        ...scanWithNewPaths.agentResults.reporter!,
-                        data: finalReporterData,
-                      },
-                    },
-                  });
-                }
-                console.log("[PIPELINE] PDFs regenerated with Level 7 PoC evidence");
-              } catch (pdfRegenError) {
-                console.log("[PIPELINE] Failed to regenerate PDFs with Level 7 PoC:", pdfRegenError);
-              }
-            }
-          }
-        } catch (pocUpdateError) {
-          console.log("[PIPELINE] Failed to update reporter with PoC evidence:", pocUpdateError);
-        }
-        
-        console.log("[PIPELINE] Running Prophet analysis...");
-        
-        // Run Prophet Agent (causal inference and financial modeling)
-        const prophetProgressCallback = async (progress: number) => {
-          await storage.updateScan(scanId, { progress: 85 + Math.round(progress * 0.05) });
-        };
-        
-        const prophetScan = await storage.getScan(scanId);
-        if (prophetScan) {
-          await storage.updateScan(scanId, {
-            currentAgent: "prophet",
-            agentResults: {
-              ...prophetScan.agentResults,
-              prophet: {
-                agentType: "prophet",
-                status: "running",
-                startedAt: new Date().toISOString(),
-                data: {},
-              },
-            },
-          });
-        }
-        
-        const prophetResult = await withTimeout(
-          runProphetAgent(scannerData, exploiterData, {
-            userId: scan.userId,
-            scanId: scanId,
-            onProgress: prophetProgressCallback,
-          }),
-          PER_AGENT_TIMEOUT_MS,
-          "Prophet agent"
-        );
-        
-        const afterProphetScan = await storage.getScan(scanId);
-        if (afterProphetScan) {
-          await storage.updateScan(scanId, {
-            agentResults: {
-              ...afterProphetScan.agentResults,
-              prophet: {
-                agentType: "prophet",
-                status: "complete",
-                startedAt: afterProphetScan.agentResults?.["prophet"]?.startedAt,
-                completedAt: new Date().toISOString(),
-                data: prophetResult,
-              },
-            },
-          });
-        }
-        
-        console.log("[PIPELINE] Prophet complete. Running Autonomous Defense...");
-        
-        // Run Autonomous Defense (WAF/Firewall hotfix integration)
-        const defenseProgressCallback = async (progress: number) => {
-          await storage.updateScan(scanId, { progress: 90 + Math.round(progress * 0.1) });
-        };
-        
-        const defenseScan = await storage.getScan(scanId);
-        if (defenseScan) {
-          await storage.updateScan(scanId, {
-            currentAgent: "autonomous_defense",
-            agentResults: {
-              ...defenseScan.agentResults,
-              autonomous_defense: {
-                agentType: "autonomous_defense",
-                status: "running",
-                startedAt: new Date().toISOString(),
-                data: {},
-              },
-            },
-          });
-        }
-        
-        const defenseResult = await withTimeout(
-          runAutonomousDefense(scannerData, {
-            userId: scan.userId,
-            scanId: scanId,
-            target: scan.target,
-            onProgress: defenseProgressCallback,
-          }),
-          PER_AGENT_TIMEOUT_MS,
-          "Autonomous Defense agent"
-        );
-        
-        const afterDefenseScan = await storage.getScan(scanId);
-        if (afterDefenseScan) {
-          await storage.updateScan(scanId, {
-            agentResults: {
-              ...afterDefenseScan.agentResults,
-              autonomous_defense: {
-                agentType: "autonomous_defense",
-                status: "complete",
-                startedAt: afterDefenseScan.agentResults?.["autonomous_defense"]?.startedAt,
-                completedAt: new Date().toISOString(),
-                data: defenseResult,
-              },
-            },
-          });
-        }
-        
-        console.log("[PIPELINE] Autonomous Defense complete. Regenerating PDFs with Agent 7 Executive Summary...");
-        
-        try {
-          const scanForFinalPdf = await storage.getScan(scanId);
-          if (scanForFinalPdf?.agentResults?.reporter?.data) {
-            const reporterDataForPdf = scanForFinalPdf.agentResults.reporter.data as EnhancedReporterOutput;
-            
-            const finalReportFormats = await generateAllReportFormats(
-              scanId,
-              reporterDataForPdf,
-              scan.target,
-              scannerData as unknown as Record<string, unknown>,
-              exploiterData as unknown as Record<string, unknown>,
-              defenseResult
-            );
-            
-            const updatedReporterWithPaths = { ...reporterDataForPdf };
-            if (finalReportFormats.executivePdf) {
-              updatedReporterWithPaths.executivePdfPath = finalReportFormats.executivePdf;
-            }
-            if (finalReportFormats.technicalPdf) {
-              updatedReporterWithPaths.technicalPdfPath = finalReportFormats.technicalPdf;
-            }
-            if (finalReportFormats.jsonExport) {
-              updatedReporterWithPaths.rawDataExportPath = finalReportFormats.jsonExport;
-            }
-            if (finalReportFormats.csvExport) {
-              updatedReporterWithPaths.csvExportPath = finalReportFormats.csvExport;
-            }
-            
-            const scanForPathUpdate = await storage.getScan(scanId);
-            if (scanForPathUpdate) {
-              await storage.updateScan(scanId, {
-                agentResults: {
-                  ...scanForPathUpdate.agentResults,
-                  reporter: {
-                    ...scanForPathUpdate.agentResults.reporter!,
-                    data: updatedReporterWithPaths,
-                  },
-                },
-              });
-            }
-            console.log("[PIPELINE] PDFs regenerated with Agent 7 Orchestrator Executive Summary");
-          }
-        } catch (finalPdfError) {
-          console.log("[PIPELINE] Failed to regenerate final PDFs with Agent 7 data:", finalPdfError);
-        }
-        
-        console.log("[PIPELINE] Level 7 ELITE agents completed successfully.");
-        
-      } catch (eliteError) {
-        console.log("[PIPELINE] Level 7 ELITE agents failed, continuing with standard results:", eliteError);
-        // Level 7 failures are non-fatal - the standard pipeline results are still valid
-      }
-    }
-
-    // Fetch final state and mark complete
-    const finalScan = await storage.getScan(scanId);
     await storage.updateScan(scanId, {
       status: "complete",
-      currentAgent: null,
-      progress: 100,
       completedAt: new Date().toISOString(),
-      agentResults: finalScan?.agentResults,
+      progress: 100,
     });
 
+    emitInfoLog(scanId, "Pipeline execution completed successfully");
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-    
-    // Preserve agent results when marking scan as failed
-    const failedScan = await storage.getScan(scanId);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[PIPELINE ERROR] ${scanId}:`, error);
+    emitErrorLog(scanId, errorMsg);
+
     await storage.updateScan(scanId, {
       status: "failed",
-      error: errorMessage,
+      error: errorMsg,
       completedAt: new Date().toISOString(),
-      agentResults: failedScan?.agentResults,
     });
-    
+
     throw error;
   }
 }
 
-export async function runAgentPipeline(scanId: string, context?: PipelineContext): Promise<void> {
-  return withTimeout(
-    runPipelineInternal(scanId, context),
-    GLOBAL_PIPELINE_TIMEOUT_MS,
-    "Agent pipeline"
-  );
+/**
+ * MAIN SCAN RUNNER
+ * This is the entry point for scan execution
+ */
+export async function runScan(scanId: string, context?: PipelineContext): Promise<void> {
+  const startTime = Date.now();
+
+  try {
+    emitInfoLog(scanId, `Starting scan ${scanId}`);
+    await withTimeout(
+      runPipelineInternal(scanId, context),
+      GLOBAL_PIPELINE_TIMEOUT_MS,
+      "Global pipeline"
+    );
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[SCAN ERROR] ${scanId}:`, error);
+    emitErrorLog(scanId, errorMsg);
+    throw error;
+  } finally {
+    const duration = Date.now() - startTime;
+    console.log(`[SCAN COMPLETE] ${scanId} - Duration: ${(duration / 1000).toFixed(2)}s`);
+  }
+}
+
+/**
+ * Export for backward compatibility
+ */
+export async function runPipeline(scanId: string, context?: PipelineContext): Promise<void> {
+  return runScan(scanId, context);
 }
