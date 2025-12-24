@@ -62,6 +62,7 @@ function formatSeverityBadge(severity: string): string {
  * HTTPX OUTPUT FILTER
  * Input: Raw httpx output with verbose lines
  * Output: Clean summary: [SUCCESS] url [200] [Title: ...] [Tech: ...]
+ * Handles both verbose and silent mode output
  */
 export function filterHttpxOutput(output: string, agentLabel: string = "HTTPX"): FilteredOutput {
   const lines = output.split("\n").filter(l => l.trim());
@@ -71,26 +72,31 @@ export function filterHttpxOutput(output: string, agentLabel: string = "HTTPX"):
   lines.forEach(line => {
     // Skip verbose/noise lines
     if (line.includes("Using config") || line.includes("time=") || line.includes("rtt=") || 
-        line.includes("elapsed") || line.includes("ms\">") || line.match(/^\[.*\]\s*\[.*\]/)) {
+        line.includes("elapsed") || line.includes("ms\">") || line.includes("[*]") || 
+        line.includes("total time") || line.match(/^\[.*\]\s*\[.*\]/) || line.match(/^=+$/)) {
       return;
     }
 
     // Extract important info: URL, Status Code, Title, Tech
-    if ((line.includes("http://") || line.includes("https://")) && 
-        (line.includes("[") || line.match(/\d{3}/))) {
+    // More permissive: accept any line with http/https URL regardless of brackets
+    if ((line.includes("http://") || line.includes("https://"))) {
+      // Extract URL - take everything before first space or bracket
+      const urlMatch = line.match(/(https?:\/\/[^\s\[\]]+)/);
+      const url = urlMatch ? urlMatch[1] : line.split(/[\[\s]/)[0];
       
-      const statusMatch = line.match(/\[(\d{3})\]/);
-      const statusCode = statusMatch ? statusMatch[1] : "?";
-      const titleMatch = line.match(/\[title:([^\]]+)\]/i) || line.match(/title="([^"]+)"/i);
-      const title = titleMatch ? titleMatch[1].trim() : "N/A";
-      const techMatch = line.match(/\[tech:([^\]]+)\]/i);
-      const tech = techMatch ? techMatch[1].trim() : "";
+      // Only process if we got a valid URL
+      if (url && (url.includes("http://") || url.includes("https://"))) {
+        const statusMatch = line.match(/\[(\d{3})\]/);
+        const statusCode = statusMatch ? statusMatch[1] : "✓";
+        const titleMatch = line.match(/\[title:([^\]]+)\]/i) || line.match(/title="([^"]+)"/i);
+        const title = titleMatch ? titleMatch[1].trim() : "";
+        const techMatch = line.match(/\[tech:([^\]]+)\]/i);
+        const tech = techMatch ? techMatch[1].trim() : "";
 
-      const url = line.match(/(https?:\/\/[^\s\[]+)/)?.[1] || line.split(/[\[\s]/)[0];
-      
-      const formattedLine = `${formatSeverityBadge("INFO")} [HTTPX] ${url} [${statusCode}]${title !== "N/A" ? ` [Title: ${title}]` : ""}${tech ? ` [Tech: ${tech}]` : ""}`;
-      importantLines.push(formattedLine);
-      successCount++;
+        const formattedLine = `${formatSeverityBadge("INFO")} [HTTPX] ${url} [${statusCode}]${title ? ` [Title: ${title}]` : ""}${tech ? ` [Tech: ${tech}]` : ""}`;
+        importantLines.push(formattedLine);
+        successCount++;
+      }
     }
   });
 

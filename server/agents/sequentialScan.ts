@@ -142,32 +142,54 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         .join("\n");
       writeFileSync(httpxInputFile, httpxInput);
       
-      // Run httpx with -l flag
+      // Run httpx with -l flag (without -silent for verbose output and proper progress tracking)
       const httpxOutput = await executeCommand(
         scanData.scanId,
         "/home/runner/workspace/bin/httpx",
-        ["-l", httpxInputFile, "-status-code", "-follow-redirects", "-silent"],
+        ["-l", httpxInputFile, "-status-code", "-follow-redirects"],
         "HTTPX"
       );
       
+      // DEBUG: Log raw httpx output
+      const rawLines = httpxOutput.split("\n").filter(l => l.trim());
+      emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] Raw httpx output lines: ${rawLines.length}`, { agentLabel: "HTTPX", type: "info" });
+      if (rawLines.length > 0) {
+        emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] First 3 lines: ${rawLines.slice(0, 3).join(" | ")}`, { agentLabel: "HTTPX", type: "info" });
+      }
+      
       // Filter output to show only important info
       const filteredHttpx = filterToolOutput("httpx", httpxOutput, "HTTPX");
+      emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] Filtered httpx lines: ${filteredHttpx.importantLines.length}`, { agentLabel: "HTTPX", type: "info" });
       filteredHttpx.importantLines.forEach(line => {
         emitStdoutLog(scanData.scanId, line, { agentLabel: "HTTPX" });
       });
       
+      // Parse live subdomains - look for any http/https URLs in the output
       const liveSubdomains = httpxOutput
         .split("\n")
-        .filter(line => line.trim() && (line.includes("http://") || line.includes("https://")))
+        .filter(line => {
+          const trimmed = line.trim();
+          // Be more permissive - accept any line that looks like a URL
+          return trimmed && (trimmed.includes("http://") || trimmed.includes("https://"));
+        })
         .map(line => {
+          const trimmed = line.trim();
           try {
-            const url = new URL(line);
-            return url.hostname || line;
+            const url = new URL(trimmed);
+            return url.hostname || trimmed;
           } catch {
-            return line;
+            // If not a valid URL, try to extract hostname from the string
+            const match = trimmed.match(/(https?:\/\/)?([^\s\/]+)/);
+            return match ? match[2] : trimmed;
           }
         })
         .filter((sub, idx, arr) => arr.indexOf(sub) === idx); // Deduplicate
+      
+      // DEBUG: Log parsing results
+      emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] Parsed live subdomains: ${liveSubdomains.length}`, { agentLabel: "HTTPX", type: "info" });
+      if (liveSubdomains.length > 0) {
+        emitStdoutLog(scanData.scanId, `[PHASE 1] [DEBUG] First 3 subdomains: ${liveSubdomains.slice(0, 3).join(", ")}`, { agentLabel: "HTTPX", type: "info" });
+      }
       
       scanData.subdomains = liveSubdomains;
       logSuccess("PHASE-1", `HTTPX verified ${liveSubdomains.length} LIVE subdomains`);
