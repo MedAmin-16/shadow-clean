@@ -109,44 +109,49 @@ async function executeAgent(
       child.kill("SIGKILL");
     }, timeoutMs);
     
-    // Stream stdout IMMEDIATELY with [REAL-TIME] prefix - NO BUFFERING - EVERY LINE
+    // Stream stdout IMMEDIATELY with [REAL-TIME] prefix - FILTER PROJECTDISCOVERY BANNERS
     child.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
       const lines = text.split("\n");
       
       lines.forEach((line: string, idx: number) => {
-        if (line.trim()) {
-          const message = `[REAL-TIME] [${agentLabel}] ${line}`;
-          emitStdoutLog(scanId, message, { agentLabel, type: "stdout" });
-          output.push(line);
-        } else if (line === "" && idx < lines.length - 1) {
-          // Emit empty lines to preserve formatting
-          emitStdoutLog(scanId, "", { agentLabel, type: "stdout" });
+        if (!line.trim()) {
+          if (idx < lines.length - 1) {
+            emitStdoutLog(scanId, "", { agentLabel, type: "stdout" });
+          }
+          return;
         }
+        
+        // BLOCK projectdiscovery banners, ASCII art, version info from stdout
+        if (line.includes("projectdiscovery") || line.includes("__") || line.includes("/_/") || 
+            line.includes("Current httpx version") || line.includes("Current nuclei version")) {
+          return; // Skip these lines completely
+        }
+        
+        const message = `[REAL-TIME] [${agentLabel}] ${line}`;
+        emitStdoutLog(scanId, message, { agentLabel, type: "stdout" });
+        output.push(line);
       });
     });
     
-    // Stream stderr IMMEDIATELY with [DEBUG] prefix - FILTER OUT NON-CRITICAL MESSAGES
+    // Stream stderr - AGGRESSIVELY FILTER PROJECTDISCOVERY BANNERS
     child.stderr?.on("data", (data: Buffer) => {
       const text = data.toString();
       const lines = text.split("\n");
       
       lines.forEach((line: string) => {
-        if (line.trim()) {
-          // Ignore non-critical messages from tools (version info, banners, info logs)
-          const isCritical = line.includes("FATAL") || line.includes("ERROR");
-          const isIgnored = line.includes("projectdiscovery") || line.includes("version") || line.includes(" INF ");
-          
-          if (isCritical || !isIgnored) {
-            // Only log if it's critical OR doesn't match ignored keywords
-            if (isCritical) {
-              emitStdoutLog(scanId, `[ERROR] ${line}`, { agentLabel, type: "stderr" });
-            } else if (!line.includes("projectdiscovery") && !line.includes("version")) {
-              // Log other stderr but not the noisy ones
-              emitStdoutLog(scanId, `[DEBUG] ${line}`, { agentLabel, type: "stderr" });
-            }
-          }
+        if (!line.trim()) return; // Skip empty lines
+        
+        // BLOCK all projectdiscovery banners, version info, and info logs COMPLETELY
+        if (line.includes("projectdiscovery") || line.includes("version") || line.includes("INF ") || line.includes("[INF]")) {
+          return; // Do NOT print these at all
         }
+        
+        // Only print CRITICAL errors
+        if (line.includes("FATAL") || line.includes("ERROR")) {
+          emitStdoutLog(scanId, `[ERROR] ${line}`, { agentLabel, type: "stderr" });
+        }
+        // Other stderr is simply ignored
       });
     });
     
@@ -264,7 +269,7 @@ export const AGENT_SWARM = {
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
   "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent --level=3 --risk=2 -u" },
   "AGENT-09": { name: "URL History Mining", tool: "waybackurls", command: "/home/runner/workspace/bin/waybackurls" },
-  "AGENT-10": { name: "HTTP Probing", tool: "httpprobe", command: "/home/runner/workspace/bin/httpprobe -c 50 -silent" },
+  "AGENT-10": { name: "HTTP Probing", tool: "httpx", command: "/home/runner/workspace/bin/httpx -silent -status-code -follow-redirects -l" },
   "AGENT-11": { name: "Technology Detection", tool: "whatweb", command: "python3 -m whatweb -a 3" },
   "AGENT-12": { name: "Directory Fuzzing", tool: "ffuf", command: "/home/runner/workspace/bin/ffuf -w /usr/share/wordlists/dirb/common.txt -u" },
   "AGENT-13": { name: "Hidden Parameters", tool: "paramspider", command: "python3 -m paramspider -l" },
@@ -286,26 +291,25 @@ export async function runScannerAgent(
   const userId = options?.userId || "unknown";
   const findings: EnhancedVulnerability[] = [];
   
-  // FORCE PRINT: Show the ASCII banner at the very beginning (immediate console output, no buffering)
-  console.log("\n");
-  console.log("╔════════════════════════════════════════════════════════════════════════════╗");
-  console.log("║                                                                            ║");
-  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
-  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
-  console.log("║                                                                            ║");
-  console.log("║         🎯 ELITE-SCANNER - MULTI-AGENT RECONNAISSANCE ENGINE 🎯         ║");
-  console.log("║                                                                            ║");
-  console.log("║  Modern Security Scanner | Multi-Agent Reconnaissance Engine              ║");
-  console.log("║                                                                            ║");
-  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
-  console.log("║  ███████████████████████████████████████████████████████████████████  ║");
-  console.log("║                                                                            ║");
-  console.log("╚════════════════════════════════════════════════════════════════════════════╝");
-  console.log("\n");
+  // FORCE PRINT: Show the ASCII banner at the VERY FIRST LINE with no buffering
+  process.stdout.write("\n");
+  process.stdout.write("╔════════════════════════════════════════════════════════════════════════════╗\n");
+  process.stdout.write("║                                                                            ║\n");
+  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
+  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
+  process.stdout.write("║                                                                            ║\n");
+  process.stdout.write("║         🎯 ELITE-SCANNER - MULTI-AGENT RECONNAISSANCE ENGINE 🎯         ║\n");
+  process.stdout.write("║                                                                            ║\n");
+  process.stdout.write("║  Modern Security Scanner | Multi-Agent Reconnaissance Engine              ║\n");
+  process.stdout.write("║                                                                            ║\n");
+  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
+  process.stdout.write("║  ███████████████████████████████████████████████████████████████████  ║\n");
+  process.stdout.write("║                                                                            ║\n");
+  process.stdout.write("╚════════════════════════════════════════════════════════════════════════════╝\n");
+  process.stdout.write("\n");
   
-  // Print the gradient banner at the very beginning
-  const bannerText = createBanner("ELITE-SCANNER");
-  console.log(gradient.rainbow(bannerText));
+  // Print phase info using simple console.log (no gradient)
+  console.log(`[${new Date().toLocaleTimeString()}] Starting scan on target: ${target}`);
   
   // ✨ PRO PACK: ULTIMATE VERSION WITH ALL 14 AGENTS
   // MERGED: All ELITE capabilities now in PRO (Dalfox, Commix, TruffleHog, RL Exploiter, Prophet, etc.)
