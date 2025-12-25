@@ -10,10 +10,11 @@ import { TerminalSpinner } from "./TerminalSpinner";
 // Import Fira Code font from Google Fonts
 import "@fontsource/fira-code";
 
+// Add missing log types to the TerminalLog interface
 export interface TerminalLog {
   id: string;
   timestamp: string;
-  type: "exec" | "stdout" | "stderr" | "ai_thought" | "info" | "warning" | "error" | "progress" | "url_stream" | "phase_update" | "finding" | "poc_payload" | "poc_evidence" | "remediation" | "debug";
+  type: "exec" | "stdout" | "stderr" | "ai_thought" | "info" | "warning" | "error" | "progress" | "url_stream" | "phase_update" | "finding" | "poc_payload" | "poc_evidence" | "remediation" | "debug" | "success" | "assetfinder" | "httpx" | "nuclei" | "system";
   message: string;
   command?: string;
   isAiLog?: boolean;
@@ -33,7 +34,7 @@ interface LiveTerminalProps {
   activeTool?: string;
 }
 
-const logStyles: Record<TerminalLog["type"], { prefix: string; color: string; bgColor: string }> = {
+const logStyles: Record<string, { prefix: string; color: string; bgColor: string }> = {
   exec: { prefix: "[SCAN]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
   stdout: { prefix: "[INFO]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
   stderr: { prefix: "[ERROR]", color: "#FF0033", bgColor: "rgba(255, 0, 51, 0.1)" },
@@ -49,6 +50,11 @@ const logStyles: Record<TerminalLog["type"], { prefix: string; color: string; bg
   poc_evidence: { prefix: "[EVIDENCE]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
   remediation: { prefix: "[FIX]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
   debug: { prefix: "[DEBUG]", color: "#888888", bgColor: "rgba(136, 136, 136, 0.05)" },
+  success: { prefix: "[SUCCESS]", color: "#00FF00", bgColor: "rgba(0, 255, 0, 0.1)" },
+  assetfinder: { prefix: "[RECON]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
+  httpx: { prefix: "[PROBE]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
+  nuclei: { prefix: "[VULN]", color: "#FFAA00", bgColor: "rgba(255, 170, 0, 0.1)" },
+  system: { prefix: "[SYSTEM]", color: "#00FFCC", bgColor: "rgba(0, 255, 204, 0.1)" },
 };
 
 // CRITICAL findings detection - BRIGHT RED highlighting
@@ -233,7 +239,7 @@ export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className, 
                 {formatTimestamp(log.timestamp)}
               </span>
               <span style={badgeStyle(log.type)}>
-                {logStyles[log.type].prefix}
+                {logStyles[log.type]?.prefix || "[LOG]"}
               </span>
               {log.agentLabel && (
                 <span style={{ color: "#00FFCC", marginRight: "0.5rem", fontWeight: "bold" }}>
