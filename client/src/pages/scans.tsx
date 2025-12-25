@@ -114,7 +114,7 @@ export default function ScansPage() {
 
   const { data: scans = [], isLoading } = useQuery<Scan[]>({
     queryKey: ["/api/scans"],
-    refetchInterval: 2000,
+    refetchInterval: false, // Switch to Socket.io for updates
   });
 
   const activeScan = useMemo(() => {
@@ -126,6 +126,33 @@ export default function ScansPage() {
     userId: user?.userId,
     enabled: showTerminal && (!!terminalScanId || !!activeScan),
   });
+
+  // Listen for progress updates via Socket.io
+  useEffect(() => {
+    if (isConnected) {
+      const handleProgress = (data: { scanId: string, progress: number, currentAgent?: string }) => {
+        queryClient.setQueryData(["/api/scans"], (old: Scan[] | undefined) => {
+          if (!old) return old;
+          return old.map(s => s.id === data.scanId ? { 
+            ...s, 
+            progress: data.progress, 
+            currentAgent: data.currentAgent || s.currentAgent 
+          } : s);
+        });
+      };
+      
+      const { socket } = useTerminal({
+        scanId: terminalScanId || activeScan?.id || null,
+        userId: user?.userId,
+        enabled: true,
+      }) as any;
+
+      if (socket) {
+        socket.on("scan:progress", handleProgress);
+        return () => socket.off("scan:progress", handleProgress);
+      }
+    }
+  }, [isConnected, terminalScanId, activeScan?.id, user?.userId]);
 
   const displayAgents = useMemo(() => {
     if (user?.planLevel === "ELITE") {

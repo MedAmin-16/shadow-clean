@@ -4,6 +4,30 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
 
+import { db } from "../db";
+import { scans } from "../db/schema";
+import { eq } from "drizzle-orm";
+
+async function updateScanProgress(scanId: string, progress: number, currentAgent?: string) {
+  try {
+    const updateData: any = { progress: Math.min(progress, 99) };
+    if (currentAgent) updateData.currentAgent = currentAgent;
+    await db.update(scans).set(updateData).where(eq(scans.id, scanId));
+    
+    // Broadcast progress via socket
+    const { io } = await import("../src/sockets/socketManager");
+    if (io) {
+      io.to(`scan:${scanId}`).emit("scan:progress", {
+        scanId,
+        progress: updateData.progress,
+        currentAgent: currentAgent
+      });
+    }
+  } catch (error) {
+    console.error(`[PROGRESS-UPDATE] Failed to update progress for ${scanId}:`, error);
+  }
+}
+
 /**
  * Capture a screenshot of a vulnerable URL
  */
@@ -334,6 +358,7 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
 
     // Step 2: Filter through HTTPX binary (FAST probing with streaming)
     if (discoveredSubs.length > 0) {
+      await updateScanProgress(scanData.scanId, 10, "httpx");
       logToolExecution("PHASE-1", "httpx", ["-l", "targets.txt", "-t 50", "-timeout 5"]);
       
       // Write subdomains to temp file for httpx
@@ -429,6 +454,7 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
   const bannerText = createBanner("PHASE-2: ATTACK SURFACE MAPPING");
   logPhaseInfo("PHASE-2", `Crawling ${scanData.subdomains.length} subdomains...`, icons.speed);
   emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-2" });
+  await updateScanProgress(scanData.scanId, 20, "katana");
 
   try {
     if (scanData.subdomains.length === 0) {
@@ -523,6 +549,7 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
   const bannerText = createBanner("PHASE-2.5: SQL INJECTION TESTING");
   logPhaseInfo("PHASE-2.5", "Testing URLs for SQL injection vulnerabilities...", icons.injection);
   emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-2.5" });
+  await updateScanProgress(scanData.scanId, 40, "sqlmap");
 
   try {
     const urlsWithParams = scanData.urls.filter(hasParameters);
@@ -597,6 +624,7 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
   const bannerText = createBanner("PHASE-2.6: COMMAND INJECTION TESTING");
   logPhaseInfo("PHASE-2.6", "Testing URLs for command injection vulnerabilities...", icons.injection);
   emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-2.6" });
+  await updateScanProgress(scanData.scanId, 50, "commix");
 
   try {
     const urlsWithCommandParams = scanData.urls.filter(hasCommandParams);
@@ -672,6 +700,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
   const bannerText = createBanner("PHASE-3: VULNERABILITY ANALYSIS");
   logPhaseInfo("PHASE-3", `Scanning ${scanData.subdomains.length} subdomains for vulnerabilities...`, icons.scan);
   emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-3" });
+  await updateScanProgress(scanData.scanId, 60, "nuclei");
 
   try {
     if (scanData.subdomains.length === 0) {
@@ -687,22 +716,72 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     writeFileSync(subdomainsFile, subdomainList);
     emitStdoutLog(scanData.scanId, `[PHASE 3] Wrote ${scanData.subdomains.length} subdomains to ${subdomainsFile}`, { agentLabel: "PHASE-3" });
 
-    // Run Nuclei with -list flag and -c 3 concurrency
-    emitStdoutLog(scanData.scanId, `[PHASE 3] Executing: nuclei -list ${subdomainsFile} -c 3 -t /home/runner/workspace/nuclei-templates`, { agentLabel: "PHASE-3" });
-    const nucleiOutput = await executeCommand(
-      scanData.scanId,
-      "/home/runner/workspace/bin/nuclei",
-      [
+    // Run Nuclei with -list flag and optimized concurrency/bulk-size
+    emitStdoutLog(scanData.scanId, `[PHASE 3] Executing: nuclei -list ${subdomainsFile} -bulk-size 25 -concurrency 10`, { agentLabel: "PHASE-3" });
+    
+    let templateCount = 0;
+    let baseProgress = 60;
+
+    const nucleiOutput = await new Promise<string>((resolve) => {
+      const outputLines: string[] = [];
+      const child = spawn("/home/runner/workspace/bin/nuclei", [
         "-list", subdomainsFile,
-        "-c", "3",
+        "-bulk-size", "25",
+        "-concurrency", "10",
         "-t", "/home/runner/workspace/nuclei-templates",
-        "-ni",
-        "-duc",
-        "-timeout", "10",
-        "-retries", "1"
-      ],
-      "NUCLEI-GLOBAL"
-    );
+        "-ni", "-duc", "-timeout", "10", "-retries", "1"
+      ], {
+        shell: true,
+        env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
+      });
+
+      child.stdout?.on("data", (data: Buffer) => {
+        const text = data.toString();
+        const lines = text.split("\n").filter((l: string) => l.trim());
+        lines.forEach((line: string) => {
+          outputLines.push(line);
+          
+          // Dynamic progress based on templates
+          if (line.match(/\[.*\]\s\[.*\]\s\[(critical|high|medium|low|info)\]/i) || line.includes("[INF]")) {
+            templateCount++;
+            if (templateCount % 1000 === 0) {
+              const extraProgress = Math.floor(templateCount / 1000) * 5;
+              const newProgress = Math.min(baseProgress + extraProgress, 85);
+              updateScanProgress(scanData.scanId, newProgress, "nuclei");
+            }
+          }
+          
+          // Standard logging logic
+          if (line.includes("[INF]")) {
+            emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI", type: "info" });
+          } else if (line.includes("[WRN]")) {
+            emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI", type: "warning" });
+          } else if (line.match(/\[.*\]\s\[.*\]\s\[(critical|high|medium|low|info)\]/i)) {
+            emitStdoutLog(scanData.scanId, `🚨 **[CRITICAL HIT]** ${line}`, { agentLabel: "NUCLEI", type: "finding" });
+            const urlMatch = line.match(/https?:\/\/[^\s]+/);
+            if (urlMatch) captureScreenshot(scanData.scanId, urlMatch[0], `nuclei-hit-${Date.now()}`);
+          } else {
+            emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI", type: "stdout" });
+          }
+        });
+      });
+
+      child.stderr?.on("data", (data: Buffer) => {
+        const text = data.toString();
+        const lines = text.split("\n").filter((l: string) => l.trim());
+        lines.forEach((line: string) => {
+          if (line.includes("[INF]")) {
+            emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI", type: "info" });
+          } else if (line.includes("[WRN]")) {
+            emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI", type: "warning" });
+          } else {
+            emitStdoutLog(scanData.scanId, line, { agentLabel: "NUCLEI", type: "error" });
+          }
+        });
+      });
+
+      child.on("close", () => resolve(outputLines.join("\n")));
+    });
 
     // Filter nuclei output - show only high/critical findings
     const filteredNuclei = filterToolOutput("nuclei", nucleiOutput, "NUCLEI");
@@ -785,6 +864,7 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
   const bannerText = createBanner("PHASE-4: XSS EXPLOITATION TESTING");
   logPhaseInfo("PHASE-4", `Testing ${scanData.urls.length} URLs for XSS vulnerabilities...`, icons.fire);
   emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-4" });
+  await updateScanProgress(scanData.scanId, 90, "dalfox");
 
   try {
     if (scanData.urls.length === 0) {
@@ -918,6 +998,7 @@ export async function runSequentialScan(
 
     // Final summary with professional table and report
     const duration = Date.now() - startTime;
+    await updateScanProgress(scanData.scanId, 100);
     const reportText = createFinalReport(target, {
       subdomains: scanData.subdomains,
       totalUrls: scanData.urls.length,
