@@ -100,7 +100,10 @@ async function executeAgent(
     emitExecLog(scanId, `[${agentLabel}] $ ${command} ${args.join(" ")}`, { agentLabel });
     logToolExecution(agentLabel, command, args);
     
-    const child = spawn(command, args, { shell: true });
+    const child = spawn(command, args, { 
+      shell: true,
+      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
+    });
     
     // Set timeout - kill process if it exceeds limit
     const timeout = setTimeout(() => {
@@ -112,65 +115,10 @@ async function executeAgent(
       child.kill("SIGKILL");
     }, timeoutMs);
     
-    // Stream stdout IMMEDIATELY with [REAL-TIME] prefix - FILTER PROJECTDISCOVERY BANNERS
-    child.stdout?.on("data", (data: Buffer) => {
-      const text = data.toString();
-      const lines = text.split("\n");
-      
-      lines.forEach((line: string, idx: number) => {
-        if (!line.trim()) {
-          if (idx < lines.length - 1) {
-            emitStdoutLog(scanId, "", { agentLabel, type: "stdout" });
-          }
-          return;
-        }
-        
-        // BLOCK projectdiscovery banners, ASCII art, version info from stdout
-        if (line.includes("projectdiscovery") || line.includes("__") || line.includes("/_/") || 
-            line.includes("Current httpx version") || line.includes("Current nuclei version")) {
-          return; // Skip these lines completely
-        }
-        
-        const message = `[REAL-TIME] [${agentLabel}] ${line}`;
-        emitStdoutLog(scanId, message, { agentLabel, type: "stdout" });
-        output.push(line);
-      });
-    });
-    
-    // Stream stderr - AGGRESSIVELY FILTER PROJECTDISCOVERY BANNERS
-    child.stderr?.on("data", (data: Buffer) => {
-      const text = data.toString();
-      const lines = text.split("\n");
-      
-      lines.forEach((line: string) => {
-        if (!line.trim()) return; // Skip empty lines
-        
-        // BLOCK all projectdiscovery banners, version info, and info logs COMPLETELY
-        if (line.includes("projectdiscovery") || line.includes("version") || line.includes("INF ") || line.includes("[INF]")) {
-          return; // Do NOT print these at all
-        }
-        
-        // Only print CRITICAL errors
-        if (line.includes("FATAL") || line.includes("ERROR")) {
-          emitStdoutLog(scanId, `[ERROR] ${line}`, { agentLabel, type: "stderr" });
-        }
-        // Other stderr is simply ignored
-      });
-    });
-    
-    child.on("close", (code: number) => {
+    child.on("error", (err: any) => {
       clearTimeout(timeout);
-      if (!timedOut) {
-        logPhaseInfo(agentLabel, `Completed with ${output.length} output lines`, icons.check);
-        emitStdoutLog(scanId, `[AGENT] ${agentLabel} completed with ${output.length} output lines`, { agentLabel, type: "info" });
-      }
-      resolve(output.join("\n"));
-    });
-    
-    child.on("error", (err: Error) => {
-      clearTimeout(timeout);
-      logError(agentLabel, `Process error - ${err.message}`);
-      emitStdoutLog(scanId, `[ERROR] [${agentLabel}] Process error - ${err.message}`, { agentLabel, type: "error" });
+      logError(agentLabel, `Process error - ${err.message} (Code: ${err.code})`);
+      emitStdoutLog(scanId, `[ERROR] [${agentLabel}] Process error - ${err.code || 'UNKNOWN'}: ${err.message}`, { agentLabel, type: "error" });
       resolve("");
     });
   });
