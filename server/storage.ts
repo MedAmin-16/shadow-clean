@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Scan, type InsertScan, type Project, type InsertProject, type Activity, type Report, type UserSettings, type UserCredits, type PlanLevel, type ExploitApprovalRequest, users, shadowlogicVulnerabilitiesTable, shadowlogicDiscoveriesTable } from "@shared/schema";
+import { type User, type InsertUser, type DbScan as Scan, type InsertScan, type Project, type InsertProject, type Activity, type Report, type UserSettings, type UserCredits, type PlanLevel, users, shadowlogicVulnerabilitiesTable, shadowlogicDiscoveriesTable } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { creditService } from "./src/services/creditService";
 import { hashPassword } from "./utils/password";
@@ -38,11 +38,11 @@ export interface IStorage {
   getSettings(userId: string): Promise<UserSettings | undefined>;
   updateSettings(userId: string, settings: Partial<UserSettings>): Promise<UserSettings>;
   
-  createApprovalRequest(request: Omit<ExploitApprovalRequest, "id" | "createdAt">): Promise<ExploitApprovalRequest>;
-  getApprovalRequest(id: string): Promise<ExploitApprovalRequest | undefined>;
-  getApprovalRequestsByScan(scanId: string): Promise<ExploitApprovalRequest[]>;
-  getPendingApprovalRequests(userId: string): Promise<ExploitApprovalRequest[]>;
-  updateApprovalRequest(id: string, updates: Partial<ExploitApprovalRequest>): Promise<ExploitApprovalRequest | undefined>;
+  createApprovalRequest(request: any): Promise<any>;
+  getApprovalRequest(id: string): Promise<any | undefined>;
+  getApprovalRequestsByScan(scanId: string): Promise<any[]>;
+  getPendingApprovalRequests(userId: string): Promise<any[]>;
+  updateApprovalRequest(id: string, updates: Partial<any>): Promise<any | undefined>;
   
   // ShadowLogic database methods
   insertVulnerability(data: { scanId: string; userId: string; type: string; severity: string; title: string; description: string; url: string; payload?: string; remediation?: string }): Promise<void>;
@@ -57,7 +57,7 @@ export class MemStorage implements IStorage {
   private reports: Map<string, Report>;
   private settings: Map<string, UserSettings>;
   private credits: Map<string, UserCredits>;
-  private approvalRequests: Map<string, ExploitApprovalRequest>;
+  private approvalRequests: Map<string, any>;
 
   constructor() {
     this.users = new Map();
@@ -267,7 +267,10 @@ export class MemStorage implements IStorage {
       status: "pending",
       currentAgent: null,
       progress: 0,
-      startedAt: new Date().toISOString(),
+      startedAt: new Date(),
+      completedAt: null,
+      error: null,
+      scanType: "standard",
       agentResults: {},
     };
     this.scans.set(id, scan);
@@ -370,8 +373,8 @@ export class MemStorage implements IStorage {
     const scan = await this.getScan(scanId);
     if (!scan || scan.status !== "complete") return undefined;
     
-    const reporterData = scan.agentResults.reporter?.data;
-    const scannerData = scan.agentResults.scanner?.data;
+    const reporterData = (scan.agentResults as any).reporter?.data;
+    const scannerData = (scan.agentResults as any).scanner?.data;
     
     const report: Report = {
       id: randomUUID(),
@@ -382,7 +385,7 @@ export class MemStorage implements IStorage {
       vulnerabilities: reporterData?.totalVulnerabilities || 0,
       details: {
         securityScore: reporterData?.securityScore || 0,
-        vulnerabilities: scannerData?.vulnerabilities.map(v => ({
+        vulnerabilities: scannerData?.vulnerabilities.map((v: any) => ({
           id: v.id,
           title: v.title,
           severity: v.severity,
@@ -450,9 +453,9 @@ export class MemStorage implements IStorage {
     return updatedSettings;
   }
 
-  async createApprovalRequest(request: Omit<ExploitApprovalRequest, "id" | "createdAt">): Promise<ExploitApprovalRequest> {
+  async createApprovalRequest(request: any): Promise<any> {
     const id = randomUUID();
-    const approvalRequest: ExploitApprovalRequest = {
+    const approvalRequest: any = {
       ...request,
       id,
       createdAt: new Date().toISOString(),
@@ -461,44 +464,38 @@ export class MemStorage implements IStorage {
     return approvalRequest;
   }
 
-  async getApprovalRequest(id: string): Promise<ExploitApprovalRequest | undefined> {
+  async getApprovalRequest(id: string): Promise<any | undefined> {
     return this.approvalRequests.get(id);
   }
 
-  async getApprovalRequestsByScan(scanId: string): Promise<ExploitApprovalRequest[]> {
+  async getApprovalRequestsByScan(scanId: string): Promise<any[]> {
     return Array.from(this.approvalRequests.values()).filter(r => r.scanId === scanId);
   }
 
-  async getPendingApprovalRequests(userId: string): Promise<ExploitApprovalRequest[]> {
+  async getPendingApprovalRequests(userId: string): Promise<any[]> {
     return Array.from(this.approvalRequests.values()).filter(
       r => r.userId === userId && r.status === "pending"
     );
   }
 
-  async updateApprovalRequest(id: string, updates: Partial<ExploitApprovalRequest>): Promise<ExploitApprovalRequest | undefined> {
+  async updateApprovalRequest(id: string, updates: Partial<any>): Promise<any | undefined> {
     const request = this.approvalRequests.get(id);
     if (!request) return undefined;
     
-    const updated: ExploitApprovalRequest = { ...request, ...updates };
+    const updated: any = { ...request, ...updates };
     this.approvalRequests.set(id, updated);
     return updated;
   }
 
   async insertVulnerability(data: { scanId: string; userId: string; type: string; severity: string; title: string; description: string; url: string; payload?: string; remediation?: string }): Promise<void> {
     try {
-      await db.insert(shadowLogicVulnerabilitiesTable).values({
+      await db.insert(shadowlogicVulnerabilitiesTable).values({
         scanId: data.scanId,
         userId: data.userId,
-        type: data.type,
         severity: data.severity,
         title: data.title,
         description: data.description,
-        url: data.url,
-        payload: data.payload || null,
-        remediation: data.remediation || null,
-        isConfirmed: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        detectedAt: new Date(),
       });
       console.log(`[DB] Vulnerability inserted: ${data.type} on ${data.url}`);
     } catch (error) {
@@ -508,15 +505,11 @@ export class MemStorage implements IStorage {
 
   async insertDiscovery(data: { scanId: string; userId: string; discoveryType: string; url: string; title?: string; method?: string; parameters?: Record<string, unknown> }): Promise<void> {
     try {
-      await db.insert(shadowLogicDiscoveriesTable).values({
-        scanId: data.scanId,
-        userId: data.userId,
+      await db.insert(shadowlogicDiscoveriesTable).values({
+        shadowlogicScanId: data.scanId,
         discoveryType: data.discoveryType,
-        url: data.url,
-        title: data.title || null,
-        method: data.method || null,
-        parameters: data.parameters || null,
-        createdAt: new Date(),
+        details: { url: data.url, title: data.title, method: data.method, parameters: data.parameters },
+        discoveredAt: new Date(),
       });
       console.log(`[DB] Discovery inserted: ${data.discoveryType} - ${data.url}`);
     } catch (error) {

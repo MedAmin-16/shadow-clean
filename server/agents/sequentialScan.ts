@@ -5,7 +5,7 @@ import { join } from "path";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
 
 import { db } from "../db";
-import { scans } from "@shared/schema";
+import { type DbScan as Scan, scansTable as scans } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 async function updateScanProgress(scanId: string, progress: number, currentAgent?: string) {
@@ -15,14 +15,8 @@ async function updateScanProgress(scanId: string, progress: number, currentAgent
     await db.update(scans).set(updateData).where(eq(scans.id, scanId));
     
     // Broadcast progress via socket
-    const { io } = await import("../src/sockets/socketManager");
-    if (io) {
-      io.to(`scan:${scanId}`).emit("scan:progress", {
-        scanId,
-        progress: updateData.progress,
-        currentAgent: currentAgent
-      });
-    }
+    const { emitScanProgress } = await import("../src/sockets/socketManager");
+    emitScanProgress(scanId, updateData.progress, currentAgent);
   } catch (error) {
     console.error(`[PROGRESS-UPDATE] Failed to update progress for ${scanId}:`, error);
   }
