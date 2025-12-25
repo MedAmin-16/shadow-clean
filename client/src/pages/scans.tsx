@@ -114,7 +114,7 @@ export default function ScansPage() {
 
   const { data: scans = [], isLoading } = useQuery<Scan[]>({
     queryKey: ["/api/scans"],
-    refetchInterval: false, // Switch to Socket.io for updates
+    refetchInterval: 2000,
   });
 
   const activeScan = useMemo(() => {
@@ -127,32 +127,15 @@ export default function ScansPage() {
     enabled: showTerminal && (!!terminalScanId || !!activeScan),
   });
 
-  // Listen for progress updates via Socket.io
+  // Keep a simple effect to invalidate query on certain socket events if needed
+  // but let's stick to the refetchInterval for now as it's more stable given the project structure
+  /*
   useEffect(() => {
     if (isConnected) {
-      const handleProgress = (data: { scanId: string, progress: number, currentAgent?: string }) => {
-        queryClient.setQueryData(["/api/scans"], (old: Scan[] | undefined) => {
-          if (!old) return old;
-          return old.map(s => s.id === data.scanId ? { 
-            ...s, 
-            progress: data.progress, 
-            currentAgent: data.currentAgent || s.currentAgent 
-          } : s);
-        });
-      };
-      
-      const { socket } = useTerminal({
-        scanId: terminalScanId || activeScan?.id || null,
-        userId: user?.userId,
-        enabled: true,
-      }) as any;
-
-      if (socket) {
-        socket.on("scan:progress", handleProgress);
-        return () => socket.off("scan:progress", handleProgress);
-      }
+      // socket logic
     }
-  }, [isConnected, terminalScanId, activeScan?.id, user?.userId]);
+  }, [isConnected]);
+  */
 
   const displayAgents = useMemo(() => {
     if (user?.planLevel === "ELITE") {
