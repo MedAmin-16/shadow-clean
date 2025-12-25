@@ -772,13 +772,16 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
         "-list", subdomainsFile,
         "-bulk-size", "1",
         "-c", "3",
-        "-rate-limit", "10",
+        "-rate-limit", "15",
+        "-include-tags", "cve2020,cve2021,cve2022,cve2023,cve2024,cve2025",
+        "-severity", "critical,high",
+        "-random-agent",
         "-me", "nuclei-out",
         "-stats",
         "-v",
         "-exclude-tags", "slow,dos,fuzzer",
         "-t", "/home/runner/workspace/nuclei-templates",
-        "-ni", "-duc", "-timeout", "10", "-retries", "1"
+        "-ni", "-duc", "-timeout", "10", "-retries", "3"
       ], {
         shell: true,
         detached: false,
@@ -804,16 +807,6 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
         const lines = text.split("\n").filter((l: string) => l.trim());
         lines.forEach((line: string) => {
           outputLines.push(line);
-          
-          // Dynamic progress based on templates
-          if (line.match(/\[.*\]\s\[.*\]\s\[(critical|high|medium|low|info)\]/i) || line.includes("[INF]")) {
-            templateCount++;
-            if (templateCount % 1000 === 0) {
-              const extraProgress = Math.floor(templateCount / 1000) * 5;
-              const newProgress = Math.min(baseProgress + extraProgress, 85);
-              updateScanProgress(scanData.scanId, newProgress, "nuclei");
-            }
-          }
           
           // Standard logging logic
           if (line.includes("[INF]")) {

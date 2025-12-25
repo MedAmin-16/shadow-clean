@@ -247,6 +247,7 @@ export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className, 
                 </span>
               )}
               <span style={{ color: "#FFFFFF" }}>
+                {log.type === "finding" && <span style={{ marginRight: "0.5rem", color: "#FF0000", animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" }}>🚨</span>}
                 {log.message}
               </span>
             </div>
