@@ -253,6 +253,7 @@ export interface TerminalLogPayload {
   progress?: number;
   phase?: string;
   eta?: string;
+  screenshot?: string;
 }
 
 export function trackVulnerability(scanId: string, severity: "critical" | "high" | "medium" | "low"): void {
@@ -354,7 +355,7 @@ export function emitExecLog(scanId: string, command: string, metadata?: { agentL
   });
 }
 
-export function emitStdoutLog(scanId: string, output: string, metadata?: { agentLabel?: string; type?: string }): void {
+export function emitStdoutLog(scanId: string, output: string, metadata?: { agentLabel?: string; type?: string; screenshot?: string }): void {
   const logType = (metadata?.type || "stdout") as TerminalLogPayload["type"];
   emitTerminalLog(scanId, {
     id: `stdout-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -363,6 +364,7 @@ export function emitStdoutLog(scanId: string, output: string, metadata?: { agent
     message: output,
     isAiLog: false,
     agentLabel: metadata?.agentLabel,
+    screenshot: metadata?.screenshot,
   });
 }
 

@@ -112,6 +112,30 @@ export function EvidenceTerminal({ logs, className }: EvidenceTerminalProps) {
               <div style={{ color: "#FF0033", fontWeight: "bold" }}>
                 {log.message}
               </div>
+              {log.screenshot && (
+                <div className="mt-3">
+                  <a href={log.screenshot} target="_blank" rel="noopener noreferrer" className="block w-48 group">
+                    <div className="relative overflow-hidden rounded border border-[#BF40BF]/30 bg-[#BF40BF]/5 aspect-video flex items-center justify-center">
+                      <img 
+                        src={log.screenshot} 
+                        alt="Vulnerability Evidence" 
+                        className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            parent.innerHTML = '<div class="text-[10px] text-[#BF40BF]/60 text-center p-2">📸 Screenshot Loading or Unavailable</div>';
+                          }
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <span className="text-[10px] text-white font-bold bg-[#BF40BF] px-2 py-0.5 rounded">VIEW FULL</span>
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              )}
             </div>
           ))
         )}

@@ -1,7 +1,36 @@
-import { spawn } from "child_process";
-import { writeFileSync, unlinkSync } from "fs";
+import { spawn, execSync } from "child_process";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync } from "fs";
 import { tmpdir } from "os";
+import { join } from "path";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
+
+/**
+ * Capture a screenshot of a vulnerable URL
+ */
+async function captureScreenshot(scanId: string, url: string, vulnerabilityId: string): Promise<string | null> {
+  const screenshotDir = join(process.cwd(), "public", "screenshots");
+  if (!existsSync(screenshotDir)) {
+    mkdirSync(screenshotDir, { recursive: true });
+  }
+
+  const filename = `screenshot-${scanId}-${vulnerabilityId}.png`;
+  const filepath = join(screenshotDir, filename);
+  const publicPath = `/screenshots/${filename}`;
+
+  try {
+    emitStdoutLog(scanId, `[SYSTEM] 📸 Triggering screenshot for: ${url}`, { agentLabel: "SCREENSHOT", type: "info" });
+    
+    // Using npx playwright as it handles local installation if needed
+    const cmd = `npx playwright screenshot --wait-for-timeout 3000 "${url}" "${filepath}"`;
+    execSync(cmd, { timeout: 15000 });
+    
+    emitStdoutLog(scanId, `[SYSTEM] ✅ Screenshot captured: ${publicPath}`, { agentLabel: "SCREENSHOT", type: "success" });
+    return publicPath;
+  } catch (error) {
+    emitStdoutLog(scanId, `[SYSTEM] ⚠️ Screenshot Unavailable for ${url}`, { agentLabel: "SCREENSHOT", type: "warning" });
+    return null;
+  }
+}
 import {
   createBanner,
   logPhaseInfo,
@@ -484,13 +513,16 @@ async function phase2_5SqlmapOnParameters(scanData: ScanData): Promise<void> {
         });
         logFinding("PHASE-2.5", `SQL Injection on ${url}`, severity as "critical" | "high" | "medium" | "low");
         
+        // Trigger screenshot for high confidence
+        const screenshot = await captureScreenshot(scanData.scanId, url, `sqli-${i}`);
+
         // EVIDENCE TERMINAL EMISSION
         emitStdoutLog(scanData.scanId, 
           `🚨 [EVIDENCE] SQL Injection Vulnerability Found!\n` +
           `URL: ${url}\n` +
           `Payload: SQLMap default injection\n` +
           `Evidence: Vulnerability detected by SQLMap analysis`, 
-          { agentLabel: "SQLMAP", type: "finding" }
+          { agentLabel: "SQLMAP", type: "finding", screenshot: screenshot || undefined }
         );
       }
     }
@@ -555,13 +587,16 @@ async function phase2_6CommixOnCommandParams(scanData: ScanData): Promise<void> 
         });
         logFinding("PHASE-2.6", `RCE / Command Injection on ${url}`, severity as "critical" | "high" | "medium" | "low");
         
+        // Trigger screenshot
+        const screenshot = await captureScreenshot(scanData.scanId, url, `rce-${i}`);
+
         // EVIDENCE TERMINAL EMISSION
         emitStdoutLog(scanData.scanId, 
           `🚨 [EVIDENCE] Command Injection Vulnerability Found!\n` +
           `URL: ${url}\n` +
           `Payload: Commix default injection\n` +
           `Evidence: Vulnerability detected by Commix OS command execution testing`, 
-          { agentLabel: "COMMIX", type: "finding" }
+          { agentLabel: "COMMIX", type: "finding", screenshot: screenshot || undefined }
         );
       }
     }
@@ -623,7 +658,8 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
 
     // Parse Nuclei JSON output - INCLUDE ALL SEVERITY LEVELS
     let findingsCount = 0;
-    nucleiOutput.split("\n").forEach(line => {
+    const lines = nucleiOutput.split("\n");
+    for (const line of lines) {
       if (line.trim().startsWith("{") && line.includes("template-id")) {
         try {
           const finding = JSON.parse(line);
@@ -648,6 +684,12 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
           
           findingsCount++;
 
+          // Trigger screenshot for High/Critical
+          let screenshot;
+          if (finding.severity === "high" || finding.severity === "critical") {
+            screenshot = await captureScreenshot(scanData.scanId, finding.matched_at || finding.host, `nuclei-${findingsCount}`);
+          }
+
           // EVIDENCE TERMINAL EMISSION for High/Critical
           if (finding.severity === "high" || finding.severity === "critical") {
             emitStdoutLog(scanData.scanId, 
@@ -655,14 +697,14 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
               `URL: ${finding.matched_at || finding.host}\n` +
               `Payload: ${finding["template-id"]}\n` +
               `Evidence: ${finding.info?.description || "Confirmed by Nuclei template match"}`, 
-              { agentLabel: "NUCLEI", type: "finding" }
+              { agentLabel: "NUCLEI", type: "finding", screenshot: screenshot || undefined }
             );
           }
         } catch {
           // Skip unparseable lines
         }
       }
-    });
+    }
 
     logDiscovery("PHASE-3", findingsCount, "vulnerabilities");
 
@@ -718,13 +760,16 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
       xssCount = (dalfoxOutput.match(/vulnerable|xss/gi) || []).length;
       logFinding("PHASE-4", "XSS vulnerabilities detected", "high");
       
+      // Trigger screenshot (on first URL for batch)
+      const screenshot = await captureScreenshot(scanData.scanId, scanData.urls[0], "xss-batch");
+
       // EVIDENCE TERMINAL EMISSION
       emitStdoutLog(scanData.scanId, 
         `🚨 [EVIDENCE] Cross-Site Scripting (XSS) Found!\n` +
         `Targets: ${xssCount} endpoints\n` +
         `Payload: Dalfox polyglot payloads\n` +
         `Evidence: Confirmed reflective/stored XSS via headless browser verification`, 
-        { agentLabel: "DALFOX", type: "finding" }
+        { agentLabel: "DALFOX", type: "finding", screenshot: screenshot || undefined }
       );
 
       scanData.vulnerabilities.push({

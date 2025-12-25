@@ -21,6 +21,7 @@ export interface TerminalLog {
   progress?: number;
   eta?: string;
   agentLabel?: string;
+  screenshot?: string;
 }
 
 interface LiveTerminalProps {
