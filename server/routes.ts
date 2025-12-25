@@ -122,6 +122,7 @@ export async function registerRoutes(
   app.post("/api/scans", sessionAuth, startScan);
   app.get("/api/scans", optionalSessionAuth, getAllScans);
   app.get("/api/scans/:id", optionalSessionAuth, getScanById);
+  app.post("/api/scans/:id/stop", sessionAuth, stopScan);
   app.delete("/api/scans/:id", sessionAuth, deleteScan);
   
   app.get("/api/projects", getAllProjects);

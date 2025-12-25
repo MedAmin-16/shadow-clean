@@ -8,6 +8,24 @@ import { db } from "../db";
 import { type DbScan as Scan, scansTable as scans } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
+// Track active processes per scan
+const activeProcesses = new Map<string, any>();
+
+export function killScanProcess(scanId: string) {
+  const child = activeProcesses.get(scanId);
+  if (child) {
+    try {
+      // Use SIGKILL for immediate termination of the process tree
+      child.kill("SIGKILL");
+      activeProcesses.delete(scanId);
+      return true;
+    } catch (error) {
+      console.error(`[KILL-PROCESS] Failed to kill process for scan ${scanId}:`, error);
+    }
+  }
+  return false;
+}
+
 async function updateScanProgress(scanId: string, progress: number, currentAgent?: string) {
   try {
     const updateData: any = { progress: Math.min(progress, 99) };
@@ -117,6 +135,8 @@ function executeCommand(
       env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
 
+    activeProcesses.set(scanId, child);
+
     let lastOutputTime = Date.now();
     const silenceTimeout = 120000; // 2 minutes
     const silenceCheck = setInterval(() => {
@@ -149,6 +169,7 @@ function executeCommand(
     });
 
     child.on("close", (code: number) => {
+      activeProcesses.delete(scanId);
       if (code !== 0 && code !== null) {
         emitStdoutLog(scanId, `[${phaseName}] ⚠️ Command exited with code ${code}`, { agentLabel: phaseName, type: "warning" });
       }
@@ -186,6 +207,8 @@ function executeCommandWithStreaming(
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
+
+    activeProcesses.set(scanId, child);
 
     let lastOutputTime = Date.now();
     const silenceTimeout = 120000; // 2 minutes
@@ -249,6 +272,7 @@ function executeCommandWithStreaming(
     });
 
     child.on("close", (code: number) => {
+      activeProcesses.delete(scanId);
       if (code !== 0 && code !== null) {
         emitStdoutLog(scanId, `[${phaseName}] ⚠️ Command exited with code ${code}`, { agentLabel: phaseName, type: "warning" });
       }

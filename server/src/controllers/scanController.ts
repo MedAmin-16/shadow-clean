@@ -1,15 +1,67 @@
-import type { Response } from "express";
+import type { Response, Request } from "express";
 import type { AuthenticatedRequest, ScanJobData } from "../types";
 import { storage } from "../../storage";
-import { insertScanSchema } from "@shared/schema";
-import { runSequentialScan } from "../../agents/sequentialScan";
+import { insertScanSchema, scansTable } from "@shared/schema";
+import { runSequentialScan, killScanProcess } from "../../agents/sequentialScan";
 import { addScanJob, getJobStatus, getScanQueue } from "../queues/scanQueue";
 import { getReportByJobId, getReportsByUser, generatePdfReport, getPdfPath, createReport } from "../services/reportService";
-import { emitScanCompleted, emitInfoLog, emitStdoutLog } from "../sockets/socketManager";
+import { emitScanCompleted, emitInfoLog, emitStdoutLog, emitTerminalLog, emitToScan } from "../sockets/socketManager";
 import { createLogger } from "../utils/logger";
 import { randomUUID } from "crypto";
+import { db } from "../../db";
+import { eq } from "drizzle-orm";
+import { unlink } from "fs/promises";
+import { glob } from "glob";
 
 const logger = createLogger("controller");
+
+export async function stopScan(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  try {
+    const scan = await storage.getScan(id);
+
+    if (!scan) {
+      res.status(404).json({ error: "Scan not found" });
+      return;
+    }
+
+    // Forcefully kill the process
+    killScanProcess(id);
+
+    // Update DB status
+    await storage.updateScan(id, { 
+      status: "failed",
+      error: "Scan force-stopped by user",
+      completedAt: new Date().toISOString()
+    });
+
+    // Cleanup temp files
+    const tempFiles = await glob(`/tmp/*${id}*`);
+    for (const file of tempFiles) {
+      try {
+        await unlink(file);
+      } catch (e) {
+        // Ignore individual file cleanup errors
+      }
+    }
+
+    // Notify UI via socket
+    emitTerminalLog(id, {
+      id: `sys-stop-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      type: "info",
+      message: "[SYSTEM] Scan force-stopped by user. Process tree terminated and temp files cleared.",
+      isAiLog: false,
+    });
+
+    emitToScan(id, "scan:stopped", { scanId: id });
+
+    res.json({ success: true, message: "Scan stopped successfully" });
+  } catch (error) {
+    logger.error("[STOP-SCAN] Error:", { error: String(error) });
+    res.status(500).json({ error: "Failed to stop scan" });
+  }
+}
 
 export async function startScan(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {

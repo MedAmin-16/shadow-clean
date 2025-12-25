@@ -24,7 +24,8 @@ import {
   Brain,
   Cpu,
   ShieldCheck,
-  Terminal
+  Terminal,
+  Square
 } from "lucide-react";
 import {
   Select,
@@ -110,6 +111,16 @@ export default function ScansPage() {
 
   const { data: user } = useQuery<UserData>({
     queryKey: ["/api/user/me"],
+  });
+
+  const stopScanMutation = useMutation({
+    mutationFn: async (scanId: string) => {
+      const response = await apiRequest("POST", `/api/scans/${scanId}/stop`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scans"] });
+    },
   });
 
   const { data: scans = [], isLoading } = useQuery<Scan[]>({
@@ -360,15 +371,30 @@ export default function ScansPage() {
                       
                       {scan.status === "running" && (
                         <div className="mt-3 space-y-2">
-                          <div className="flex items-center gap-2 text-sm">
-                            {scan.currentAgent && (
-                              <>
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                <span className="text-muted-foreground">
-                                  Running: {AGENT_LABELS[scan.currentAgent as DisplayAgentType]?.label || scan.currentAgent}
-                                </span>
-                              </>
-                            )}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 text-sm">
+                              {scan.currentAgent && (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  <span className="text-muted-foreground">
+                                    Running: {AGENT_LABELS[scan.currentAgent as DisplayAgentType]?.label || scan.currentAgent}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <Button 
+                              variant="destructive" 
+                              size="sm" 
+                              className="h-7 text-[10px] px-2 shadow-lg shadow-red-500/20"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                stopScanMutation.mutate(scan.id);
+                              }}
+                              disabled={stopScanMutation.isPending}
+                            >
+                              <Square className="h-3 w-3 mr-1 fill-current" />
+                              STOP SCAN
+                            </Button>
                           </div>
                           <div className="h-1.5 w-full max-w-md bg-muted rounded-full overflow-hidden">
                             <div

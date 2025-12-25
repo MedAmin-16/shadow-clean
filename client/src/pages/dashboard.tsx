@@ -9,7 +9,7 @@ import { ActivityLog } from "@/components/ActivityLog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { LiveTerminal } from "@/components/LiveTerminal";
 import { useTerminal } from "@/hooks/useTerminal";
-import { Plus, Search, Zap } from "lucide-react";
+import { Plus, Search, Zap, Square } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -73,6 +73,17 @@ export default function DashboardPage() {
 
   const { data: user } = useQuery<UserData & { planLevel?: string }>({
     queryKey: ["/api/user/me"],
+  });
+
+  const stopScanMutation = useMutation({
+    mutationFn: async (scanId: string) => {
+      const response = await apiRequest("POST", `/api/scans/${scanId}/stop`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scans"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/metrics"] });
+    },
   });
 
   const { data: metrics } = useQuery<DashboardMetrics>({
@@ -190,8 +201,20 @@ export default function DashboardPage() {
           lastScanTime={displayProjects[0]?.lastScanDate || "Never"}
           assetsCount={displayProjects[0]?.assetCount || 0}
         />
-        <div className="md:col-span-2">
+        <div className="md:col-span-2 relative">
           <ActiveScansList scans={displayScans} />
+          {activeScan && (
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              className="absolute top-4 right-4 h-7 text-[10px] px-2 shadow-lg shadow-red-500/20"
+              onClick={() => stopScanMutation.mutate(activeScan.id)}
+              disabled={stopScanMutation.isPending}
+            >
+              <Square className="h-3 w-3 mr-1 fill-current" />
+              STOP SCAN
+            </Button>
+          )}
         </div>
       </div>
 
