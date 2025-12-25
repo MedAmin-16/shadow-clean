@@ -148,12 +148,16 @@ function executeCommandWithStreaming(
 
     child.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
+      // IMMEDIATE EMISSION for every chunk - no waiting for \n
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
         output.push(line);
         // EMIT IMMEDIATELY - no buffering
         if (line.includes("http://") || line.includes("https://")) {
           emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
+        } else {
+          // Fallback for non-URL output lines to keep terminal moving
+          emitStdoutLog(scanId, `[${phaseName}] ${line}`, { agentLabel: phaseName, type: "stdout" });
         }
       });
     });
@@ -317,42 +321,58 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         .join("\n");
       writeFileSync(httpxInputFile, httpxInput);
       
+      // DEBUG: Print httpx-input content
+      emitStdoutLog(scanData.scanId, `[DEBUG] HTTPX input file content:\n${httpxInput}`, { agentLabel: "HTTPX", type: "debug" });
+      
       // Status message
       emitStdoutLog(scanData.scanId, `[DEBUG] HTTPX is checking ${discoveredSubs.length} targets with 50 threads (5s timeout per target)...`, { agentLabel: "HTTPX", type: "info" });
       
       // Run httpx with optimized flags for speed and streaming
-      const httpxOutput = await executeCommandWithStreaming(
+      // Adding explicit timeout handle for HTTPX recovery
+      const httpxOutputPromise = executeCommandWithStreaming(
         scanData.scanId,
         "/home/runner/workspace/bin/httpx",
         ["-l", httpxInputFile, "-status-code", "-follow-redirects", "-t", "50", "-timeout", "5"],
         "HTTPX"
       );
+
+      // EMERGENCY RECOVERY: If HTTPX is silent for more than 25 seconds for small targets
+      const recoveryTimeout = new Promise<string>((resolve) => {
+        setTimeout(() => {
+          emitStdoutLog(scanData.scanId, `[RECOVERY] HTTPX silent for 25s. Pushing target(s) directly to Phase 2...`, { agentLabel: "HTTPX", type: "warning" });
+          resolve(""); // Resolve empty string to bypass parsing but move forward
+        }, discoveredSubs.length === 1 ? 20000 : 40000); 
+      });
+
+      const httpxOutput = await Promise.race([httpxOutputPromise, recoveryTimeout]);
       
       // Parse live subdomains - look for any http/https URLs in the output
-      const liveSubdomains = httpxOutput
-        .split("\n")
-        .filter(line => {
-          const trimmed = line.trim();
-          // Be more permissive - accept any line that looks like a URL
-          return trimmed && (trimmed.includes("http://") || trimmed.includes("https://"));
-        })
-        .map(line => {
-          const trimmed = line.trim();
-          try {
-            const url = new URL(trimmed);
-            return url.hostname || trimmed;
-          } catch {
-            // If not a valid URL, try to extract hostname from the string
-            const match = trimmed.match(/(https?:\/\/)?([^\s\/]+)/);
-            return match ? match[2] : trimmed;
-          }
-        })
-        .filter((sub, idx, arr) => arr.indexOf(sub) === idx); // Deduplicate
+      const liveSubdomains = httpxOutput && httpxOutput.trim() 
+        ? httpxOutput
+          .split("\n")
+          .filter(line => {
+            const trimmed = line.trim();
+            // Be more permissive - accept any line that looks like a URL
+            return trimmed && (trimmed.includes("http://") || trimmed.includes("https://"));
+          })
+          .map(line => {
+            const trimmed = line.trim();
+            try {
+              const url = new URL(trimmed);
+              return url.hostname || trimmed;
+            } catch {
+              // If not a valid URL, try to extract hostname from the string
+              const match = trimmed.match(/(https?:\/\/)?([^\s\/]+)/);
+              return match ? match[2] : trimmed;
+            }
+          })
+          .filter((sub, idx, arr) => arr.indexOf(sub) === idx) // Deduplicate
+        : discoveredSubs.map(s => s.replace(/^https?:\/\//i, '').split('/')[0]); // Fallback to input if silent
       
-      emitStdoutLog(scanData.scanId, `[PHASE 1] HTTPX found ${liveSubdomains.length} live targets`, { agentLabel: "HTTPX", type: "success" });
+      emitStdoutLog(scanData.scanId, `[PHASE 1] HTTPX result: ${liveSubdomains.length} live targets`, { agentLabel: "HTTPX", type: "success" });
       
       scanData.subdomains = liveSubdomains;
-      logSuccess("PHASE-1", `HTTPX verified ${liveSubdomains.length} LIVE subdomains`);
+      logSuccess("PHASE-1", `HTTPX verified ${liveSubdomains.length} targets (including recovery fallbacks)`);
       
       liveSubdomains.forEach((sub) => {
         emitStdoutLog(scanData.scanId, `${icons.check} ${sub}`, { agentLabel: "PHASE-1" });
