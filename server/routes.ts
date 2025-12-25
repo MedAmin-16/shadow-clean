@@ -11,6 +11,7 @@ import {
   deleteScan,
   downloadReport,
   getScanHistory,
+  stopScan,
 } from "./src/controllers/scanController";
 import {
   createApiKey,

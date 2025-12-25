@@ -32,7 +32,7 @@ export async function stopScan(req: Request, res: Response): Promise<void> {
     await storage.updateScan(id, { 
       status: "failed",
       error: "Scan force-stopped by user",
-      completedAt: new Date().toISOString()
+      completedAt: new Date()
     });
 
     // Cleanup temp files
