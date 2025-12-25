@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { LiveTerminal } from "@/components/LiveTerminal";
+import { EvidenceTerminal } from "@/components/EvidenceTerminal";
 import { useTerminal } from "@/hooks/useTerminal";
 import { 
   Search, 
@@ -431,13 +432,19 @@ export default function ScansPage() {
               </CardContent>
               
               {showTerminal && terminalScanId === scan.id && canViewTerminal && (
-                <LiveTerminal
-                  logs={logs}
-                  isActive={scan.status === "running" && isConnected}
-                  planLevel={(user?.planLevel as "STANDARD" | "PRO" | "ELITE") || "STANDARD"}
-                  vulnStats={vulnStats}
-                  className="border-t border-green-900/30"
-                />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 border-t border-green-900/30">
+                  <LiveTerminal
+                    logs={logs}
+                    isActive={scan.status === "running" && isConnected}
+                    planLevel={(user?.planLevel as "STANDARD" | "PRO" | "ELITE") || "STANDARD"}
+                    vulnStats={vulnStats}
+                    className="h-full"
+                  />
+                  <EvidenceTerminal
+                    logs={logs}
+                    className="h-full"
+                  />
+                </div>
               )}
             </Card>
           ))
