@@ -107,6 +107,8 @@ async function executeAgent(
       timedOut = true;
       logError(agentLabel, `TIMEOUT after ${(timeoutMs / 1000).toFixed(1)}s`);
       emitStdoutLog(scanId, `[TIMEOUT] [${agentLabel}] Process exceeded ${timeoutMs}ms timeout limit, killing...`, { agentLabel, type: "error" });
+      // EMIT ERROR EVENT to prevent UI hang
+      emitStdoutLog(scanId, `[SYSTEM] Process error - TIMEOUT`, { agentLabel, type: "error" });
       child.kill("SIGKILL");
     }, timeoutMs);
     
@@ -454,10 +456,16 @@ export async function runScannerAgent(
   }
   
   // Multi-target attack: Get subdomains from recon data
-  const targets = reconData.subdomains && reconData.subdomains.length > 0 
+  let targets = reconData.subdomains && reconData.subdomains.length > 0 
     ? reconData.subdomains 
     : [target];
   
+  // AUTO-CLEANUP TARGET: Strip protocol and trailing slashes for all targets
+  const cleanedTarget = target.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (cleanedTarget !== target) {
+    emitStdoutLog(scanId, `[DEBUG] Cleaning target URL: ${target} -> ${cleanedTarget}`, { agentLabel: "SCANNER", type: "debug" });
+  }
+
   emitStdoutLog(scanId, `\n${'═'.repeat(80)}`, { agentLabel: "CONTROLLER" });
   emitStdoutLog(scanId, `[PHASE-SYSTEM] HARD BLOCK ENFORCEMENT ENABLED`, { agentLabel: "CONTROLLER" });
   emitStdoutLog(scanId, `[PHASE-SYSTEM] Sequential execution with phase barriers (subdomains processed 1 by 1)`, { agentLabel: "CONTROLLER" });

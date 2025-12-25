@@ -116,6 +116,8 @@ function executeCommand(
 
     child.on("error", (err: Error) => {
       emitErrorLog(scanId, `[${phaseName}] Process error: ${err.message}`);
+      // Ensure error event is sent to frontend to prevent hang
+      emitStdoutLog(scanId, `[SYSTEM] Process error - Disconnected`, { agentLabel: phaseName, type: "error" });
       resolve("");
     });
   });
@@ -172,6 +174,8 @@ function executeCommandWithStreaming(
 
     child.on("error", (err: Error) => {
       emitErrorLog(scanId, `[${phaseName}] Process error: ${err.message}`);
+      // Ensure error event is sent to frontend to prevent hang
+      emitStdoutLog(scanId, `[SYSTEM] Process error - Disconnected`, { agentLabel: phaseName, type: "error" });
       resolve("");
     });
   });
@@ -276,21 +280,26 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
   try {
     // Extract domain from URL if needed
     let targetDomain = scanData.target;
-    try {
-      const url = new URL(scanData.target.startsWith('http') ? scanData.target : `https://${scanData.target}`);
-      targetDomain = url.hostname;
-    } catch {
-      targetDomain = scanData.target.split('/')[0];
-    }
+    
+    // AUTO-CLEANUP TARGET: Strip protocol and trailing slashes
+    const originalTarget = targetDomain;
+    targetDomain = targetDomain.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    emitStdoutLog(scanData.scanId, `[DEBUG] Cleaning target URL: ${originalTarget} -> ${targetDomain}`, { agentLabel: "PHASE-1", type: "debug" });
     
     emitStdoutLog(scanData.scanId, `[PHASE 1] Extracted domain: ${targetDomain}`, { agentLabel: "PHASE-1" });
 
     // Step 1: Run Assetfinder with STREAMING DISCOVERY
     logToolExecution("PHASE-1", "assetfinder", ["-subs-only", targetDomain]);
-    const discoveredSubs = await executeAssetfinderWithDiscovery(
+    let discoveredSubs = await executeAssetfinderWithDiscovery(
       scanData.scanId,
       targetDomain
     );
+
+    // INPUT CHECK: If assetfinder returns 0 results (single page/URL), use the target itself
+    if (discoveredSubs.length === 0) {
+      emitStdoutLog(scanData.scanId, `[DEBUG] Assetfinder found 0 subdomains. Using target domain directly for probing.`, { agentLabel: "ASSETFINDER", type: "info" });
+      discoveredSubs = [targetDomain];
+    }
 
     logDiscovery("PHASE-1", discoveredSubs.length, "subdomains");
 
