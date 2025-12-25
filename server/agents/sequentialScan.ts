@@ -149,15 +149,14 @@ function executeCommandWithStreaming(
     child.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
       // IMMEDIATE EMISSION for every chunk - no waiting for \n
+      emitStdoutLog(scanId, text, { agentLabel: phaseName, type: "stdout" });
+      
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
         output.push(line);
         // EMIT IMMEDIATELY - no buffering
         if (line.includes("http://") || line.includes("https://")) {
           emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
-        } else {
-          // Fallback for non-URL output lines to keep terminal moving
-          emitStdoutLog(scanId, `[${phaseName}] ${line}`, { agentLabel: phaseName, type: "stdout" });
         }
       });
     });
@@ -336,10 +335,10 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
         "HTTPX"
       );
 
-      // EMERGENCY RECOVERY: If HTTPX is silent for more than 25 seconds for small targets
+      // EMERGENCY RECOVERY: If HTTPX is silent for more than 20 seconds for small targets
       const recoveryTimeout = new Promise<string>((resolve) => {
         setTimeout(() => {
-          emitStdoutLog(scanData.scanId, `[RECOVERY] HTTPX silent for 25s. Pushing target(s) directly to Phase 2...`, { agentLabel: "HTTPX", type: "warning" });
+          emitStdoutLog(scanData.scanId, `[RECOVERY] HTTPX silent for 20s. Pushing target(s) directly to Phase 2...`, { agentLabel: "HTTPX", type: "warning" });
           resolve(""); // Resolve empty string to bypass parsing but move forward
         }, discoveredSubs.length === 1 ? 20000 : 40000); 
       });
