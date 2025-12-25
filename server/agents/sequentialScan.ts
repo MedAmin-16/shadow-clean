@@ -5,7 +5,7 @@ import { join } from "path";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
 
 import { db } from "../db";
-import { scans } from "../db/schema";
+import { scans } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 async function updateScanProgress(scanId: string, progress: number, currentAgent?: string) {
