@@ -658,8 +658,8 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
 
     // Parse Nuclei JSON output - INCLUDE ALL SEVERITY LEVELS
     let findingsCount = 0;
-    const lines = nucleiOutput.split("\n");
-    for (const line of lines) {
+    const nucleiLines = nucleiOutput.split("\n");
+    for (const line of nucleiLines) {
       if (line.trim().startsWith("{") && line.includes("template-id")) {
         try {
           const finding = JSON.parse(line);

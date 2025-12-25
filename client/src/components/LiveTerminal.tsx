@@ -166,17 +166,17 @@ export function LiveTerminal({ logs, isActive, planLevel, vulnStats, className, 
   };
 
   const badgeStyle = (logType: TerminalLog["type"]) => {
-    const style = logStyles[logType];
+    const style = logStyles[logType] || logStyles.stdout;
     return {
       display: "inline-block",
       padding: "0.25rem 0.5rem",
-      backgroundColor: style.bgColor,
-      color: style.color,
+      backgroundColor: style.bgColor || "rgba(255, 255, 255, 0.1)",
+      color: style.color || "#ffffff",
       fontWeight: "bold",
       marginRight: "0.5rem",
       borderRadius: "2px",
       fontSize: "0.75rem",
-      border: `1px solid ${style.color}`,
+      border: `1px solid ${style.color || "#ffffff"}`,
       textTransform: "uppercase" as const,
     };
   };
