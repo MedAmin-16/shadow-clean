@@ -87,7 +87,8 @@ function executeCommand(
 
     const child = spawn(command, args, { 
       shell: true,
-      stdio: ["pipe", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
 
     child.stdout?.on("data", (data: Buffer) => {
@@ -114,10 +115,10 @@ function executeCommand(
       resolve(output.join("\n"));
     });
 
-    child.on("error", (err: Error) => {
-      emitErrorLog(scanId, `[${phaseName}] Process error: ${err.message}`);
+    child.on("error", (err: any) => {
+      emitErrorLog(scanId, `[${phaseName}] Process spawn error: ${err.message} (Code: ${err.code})`);
       // Ensure error event is sent to frontend to prevent hang
-      emitStdoutLog(scanId, `[SYSTEM] Process error - Disconnected`, { agentLabel: phaseName, type: "error" });
+      emitStdoutLog(scanId, `[SYSTEM] Process error - ${err.code || 'UNKNOWN'}: ${err.message}`, { agentLabel: phaseName, type: "error" });
       resolve("");
     });
   });
@@ -141,7 +142,8 @@ function executeCommandWithStreaming(
 
     const child = spawn(command, args, { 
       shell: true,
-      stdio: ["pipe", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
 
     child.stdout?.on("data", (data: Buffer) => {
@@ -172,10 +174,10 @@ function executeCommandWithStreaming(
       resolve(output.join("\n"));
     });
 
-    child.on("error", (err: Error) => {
-      emitErrorLog(scanId, `[${phaseName}] Process error: ${err.message}`);
+    child.on("error", (err: any) => {
+      emitErrorLog(scanId, `[${phaseName}] Process spawn error: ${err.message} (Code: ${err.code})`);
       // Ensure error event is sent to frontend to prevent hang
-      emitStdoutLog(scanId, `[SYSTEM] Process error - Disconnected`, { agentLabel: phaseName, type: "error" });
+      emitStdoutLog(scanId, `[SYSTEM] Process error - ${err.code || 'UNKNOWN'}: ${err.message}`, { agentLabel: phaseName, type: "error" });
       resolve("");
     });
   });
@@ -202,7 +204,8 @@ function executeAssetfinderWithDiscovery(
 
     const child = spawn("/home/runner/workspace/bin/assetfinder", ["-subs-only", targetDomain], { 
       shell: true,
-      stdio: ["pipe", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
 
     // Set idle timeout - if 30 seconds pass without new subdomain, kill it
