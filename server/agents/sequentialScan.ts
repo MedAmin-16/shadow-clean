@@ -148,14 +148,31 @@ function executeCommandWithStreaming(
 
     child.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
-      // IMMEDIATE EMISSION for every chunk - no waiting for \n
-      emitStdoutLog(scanId, text, { agentLabel: phaseName, type: "stdout" });
-      
+      // Nuclei Log Parser: Map INF to INFO, WRN to WARNING, and Critical Hits to finding
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
         output.push(line);
-        // EMIT IMMEDIATELY - no buffering
-        if (line.includes("http://") || line.includes("https://")) {
+        
+        if (line.includes("[INF]")) {
+          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "info" });
+        } else if (line.includes("[WRN]")) {
+          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "warning" });
+        } else if (line.match(/\[.*\]\s\[.*\]\s\[(critical|high|medium|low|info)\]/i)) {
+          // Critical Hits: Highlight in BOLD RED and send to Evidence Vault
+          emitStdoutLog(scanId, `🚨 **[CRITICAL HIT]** ${line}`, { agentLabel: phaseName, type: "finding" });
+          
+          // Trigger Screenshot Agent immediately for hits
+          const urlMatch = line.match(/https?:\/\/[^\s]+/);
+          if (urlMatch) {
+            const vulnUrl = urlMatch[0];
+            captureScreenshot(scanId, vulnUrl, `nuclei-hit-${Date.now()}`);
+          }
+        } else {
+          emitStdoutLog(scanId, text, { agentLabel: phaseName, type: "stdout" });
+        }
+
+        // Keep legacy success check for non-Nuclei tools
+        if (!line.includes("[INF]") && !line.includes("[WRN]") && (line.includes("http://") || line.includes("https://"))) {
           emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
         }
       });
