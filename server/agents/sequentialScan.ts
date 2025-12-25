@@ -112,11 +112,26 @@ function executeCommand(
 
     const child = spawn(command, args, { 
       shell: true,
+      detached: false,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
 
+    let lastOutputTime = Date.now();
+    const silenceTimeout = 120000; // 2 minutes
+    const silenceCheck = setInterval(() => {
+      if (child.killed) {
+        clearInterval(silenceCheck);
+        return;
+      }
+      if (Date.now() - lastOutputTime > silenceTimeout) {
+        emitStdoutLog(scanId, `[WARN] Tool is silent for >2m, possibly throttled by WAF. Continuing to listen...`, { agentLabel: phaseName, type: "warning" });
+        lastOutputTime = Date.now(); // Reset to avoid spamming
+      }
+    }, 30000);
+
     child.stdout?.on("data", (data: Buffer) => {
+      lastOutputTime = Date.now();
       const text = data.toString();
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
@@ -167,11 +182,26 @@ function executeCommandWithStreaming(
 
     const child = spawn(command, args, { 
       shell: true,
+      detached: false,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
     });
 
+    let lastOutputTime = Date.now();
+    const silenceTimeout = 120000; // 2 minutes
+    const silenceCheck = setInterval(() => {
+      if (child.killed) {
+        clearInterval(silenceCheck);
+        return;
+      }
+      if (Date.now() - lastOutputTime > silenceTimeout) {
+        emitStdoutLog(scanId, `[WARN] Tool is silent for >2m, possibly throttled by WAF. Continuing to listen...`, { agentLabel: phaseName, type: "warning" });
+        lastOutputTime = Date.now(); // Reset to avoid spamming
+      }
+    }, 30000);
+
     child.stdout?.on("data", (data: Buffer) => {
+      lastOutputTime = Date.now();
       const text = data.toString();
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
@@ -718,7 +748,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     emitStdoutLog(scanData.scanId, `[PHASE 3] Wrote ${scanData.subdomains.length} subdomains to ${subdomainsFile}`, { agentLabel: "PHASE-3" });
 
     // Run Nuclei with -list flag and optimized concurrency/bulk-size
-    emitStdoutLog(scanData.scanId, `[PHASE 3] Executing: nuclei -list ${subdomainsFile} -bulk-size 25 -concurrency 10`, { agentLabel: "PHASE-3" });
+    emitStdoutLog(scanData.scanId, `[PHASE 3] Executing: nuclei -list ${subdomainsFile} -bulk-size 1 -c 3 -me nuclei-out -stats -v -exclude-tags slow,dos,fuzzer`, { agentLabel: "PHASE-3" });
     
     let templateCount = 0;
     let baseProgress = 60;
@@ -727,16 +757,35 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       const outputLines: string[] = [];
       const child = spawn("/home/runner/workspace/bin/nuclei", [
         "-list", subdomainsFile,
-        "-bulk-size", "25",
-        "-concurrency", "10",
+        "-bulk-size", "1",
+        "-c", "3",
+        "-me", "nuclei-out",
+        "-stats",
+        "-v",
+        "-exclude-tags", "slow,dos,fuzzer",
         "-t", "/home/runner/workspace/nuclei-templates",
         "-ni", "-duc", "-timeout", "10", "-retries", "1"
       ], {
         shell: true,
+        detached: false,
         env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
       });
 
+      let lastOutputTime = Date.now();
+      const silenceTimeout = 120000; // 2 minutes
+      const silenceCheck = setInterval(() => {
+        if (child.killed) {
+          clearInterval(silenceCheck);
+          return;
+        }
+        if (Date.now() - lastOutputTime > silenceTimeout) {
+          emitStdoutLog(scanData.scanId, `[WARN] Tool is silent for >2m, possibly throttled by WAF. Continuing to listen...`, { agentLabel: "NUCLEI", type: "warning" });
+          lastOutputTime = Date.now();
+        }
+      }, 30000);
+
       child.stdout?.on("data", (data: Buffer) => {
+        lastOutputTime = Date.now();
         const text = data.toString();
         const lines = text.split("\n").filter((l: string) => l.trim());
         lines.forEach((line: string) => {

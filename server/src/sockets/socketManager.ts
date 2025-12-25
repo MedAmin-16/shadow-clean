@@ -27,6 +27,21 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
   io.on("connection", (socket: Socket) => {
     logger.info(`Client connected: ${socket.id}`);
 
+    // Heartbeat mechanism to keep terminal alive
+    const heartbeatInterval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit("terminal:log", {
+          id: `hb-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          type: "info",
+          message: "[SYSTEM] Keep-Alive: Connection Active",
+          isAiLog: false,
+        });
+      } else {
+        clearInterval(heartbeatInterval);
+      }
+    }, 15000);
+
     socket.on("authenticate", async (userId: string) => {
       if (!userId) return;
 
