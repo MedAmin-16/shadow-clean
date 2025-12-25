@@ -148,7 +148,6 @@ function executeCommandWithStreaming(
 
     child.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
-      // Nuclei Log Parser: Map INF to INFO, WRN to WARNING, and Critical Hits to finding
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
         output.push(line);
@@ -168,12 +167,12 @@ function executeCommandWithStreaming(
             captureScreenshot(scanId, vulnUrl, `nuclei-hit-${Date.now()}`);
           }
         } else {
-          emitStdoutLog(scanId, text, { agentLabel: phaseName, type: "stdout" });
-        }
-
-        // Keep legacy success check for non-Nuclei tools
-        if (!line.includes("[INF]") && !line.includes("[WRN]") && (line.includes("http://") || line.includes("https://"))) {
-          emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
+          // For other lines, emit as stdout but check for URLs to keep success icons
+          if (!line.includes("[INF]") && !line.includes("[WRN]") && (line.includes("http://") || line.includes("https://"))) {
+            emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
+          } else {
+            emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "stdout" });
+          }
         }
       });
     });
@@ -182,7 +181,14 @@ function executeCommandWithStreaming(
       const text = data.toString();
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
-        emitStdoutLog(scanId, `[${phaseName}] [ERROR] ${line}`, { agentLabel: phaseName, type: "error" });
+        // Nuclei often puts INF/WRN in stderr too - handle them here as well
+        if (line.includes("[INF]")) {
+          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "info" });
+        } else if (line.includes("[WRN]")) {
+          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "warning" });
+        } else {
+          emitStdoutLog(scanId, `[${phaseName}] [ERROR] ${line}`, { agentLabel: phaseName, type: "error" });
+        }
         errorOutput.push(line);
       });
     });
