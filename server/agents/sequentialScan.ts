@@ -506,21 +506,34 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
     const katanaOutput = await executeCommand(
       scanData.scanId,
       "/home/runner/workspace/bin/katana",
-      ["-list", subdomainsFile, "-c", "3", "-d", "3", "-ps", "-system-chromium", "--headless", "--no-sandbox"],
+      ["-list", subdomainsFile, "-c", "3", "-d", "3", "-ps", "-jc", "-delay", "5", "-system-chromium", "--no-sandbox"],
       "KATANA-GLOBAL"
     );
 
-    // Filter katana output - show progress + summary only
-    const filteredKatana = filterToolOutput("katana", katanaOutput, "KATANA");
-    filteredKatana.importantLines.forEach(line => {
-      emitStdoutLog(scanData.scanId, line, { agentLabel: "KATANA" });
-    });
-
     // Parse URLs from output
-    const allUrls = katanaOutput
+    let allUrls = katanaOutput
       .split("\n")
       .filter(line => line.trim() && (line.startsWith("http://") || line.startsWith("https://")))
       .slice(0, 500); // Limit to 500 URLs total
+
+    // PASSIVE FALLBACK: If Katana finds 0 URLs, use GAU for passive discovery
+    if (allUrls.length === 0) {
+      emitStdoutLog(scanData.scanId, `[PHASE 2] Katana discovered 0 URLs. Triggering Passive Discovery (GAU)...`, { agentLabel: "PHASE-2", type: "warning" });
+      
+      const gauOutput = await executeCommand(
+        scanData.scanId,
+        "/home/runner/workspace/bin/gau",
+        ["--subs", scanData.target.replace(/^https?:\/\//i, '').replace(/\/+$/, '')],
+        "GAU-PASSIVE"
+      );
+
+      allUrls = gauOutput
+        .split("\n")
+        .filter(line => line.trim() && (line.startsWith("http://") || line.startsWith("https://")))
+        .slice(0, 500);
+
+      emitStdoutLog(scanData.scanId, `[PHASE 2] GAU discovered ${allUrls.length} passive URLs.`, { agentLabel: "GAU", type: "success" });
+    }
 
     scanData.urls = allUrls;
     logDiscovery("PHASE-2", allUrls.length, "URLs");
@@ -759,6 +772,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
         "-list", subdomainsFile,
         "-bulk-size", "1",
         "-c", "3",
+        "-rate-limit", "10",
         "-me", "nuclei-out",
         "-stats",
         "-v",
