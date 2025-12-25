@@ -15,8 +15,15 @@ async function updateScanProgress(scanId: string, progress: number, currentAgent
     await db.update(scans).set(updateData).where(eq(scans.id, scanId));
     
     // Broadcast progress via socket
-    const { emitScanProgress } = await import("../src/sockets/socketManager");
+    const { emitScanProgress, emitToScan } = await import("../src/sockets/socketManager");
     emitScanProgress(scanId, updateData.progress, currentAgent);
+    
+    // Force UI state update for all subscribers
+    emitToScan(scanId, "scan:progress", {
+      scanId,
+      progress: updateData.progress,
+      currentAgent: currentAgent
+    });
   } catch (error) {
     console.error(`[PROGRESS-UPDATE] Failed to update progress for ${scanId}:`, error);
   }

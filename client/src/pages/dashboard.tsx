@@ -77,7 +77,6 @@ export default function DashboardPage() {
 
   const { data: metrics } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
-    refetchInterval: 5000,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -86,12 +85,10 @@ export default function DashboardPage() {
 
   const { data: scans = [] } = useQuery<Scan[]>({
     queryKey: ["/api/scans"],
-    refetchInterval: 2000,
   });
 
   const { data: activities = [] } = useQuery<Activity[]>({
     queryKey: ["/api/activity"],
-    refetchInterval: 5000,
   });
 
   const { data: vulnerabilities = [] } = useQuery<Vulnerability[]>({

@@ -114,7 +114,6 @@ export default function ScansPage() {
 
   const { data: scans = [], isLoading } = useQuery<Scan[]>({
     queryKey: ["/api/scans"],
-    refetchInterval: 2000,
   });
 
   const activeScan = useMemo(() => {
