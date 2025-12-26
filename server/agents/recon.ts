@@ -1,7 +1,19 @@
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
-import type { ReconFindings, PlanLevel, SingleTargetReconFindings, ScopeCostEstimate } from "@shared/schema";
+import type { ReconFindings, PlanLevel } from "@shared/schema";
 import { PLAN_CONFIGS as PlanConfigs, calculateScopeCost } from "@shared/schema";
+
+interface SingleTargetReconFindings {
+  target: string;
+  ip: string;
+  hostname: string;
+  ports: number[];
+  services: { port: number; service: string; version?: string }[];
+  technologies: string[];
+  subdomains: string[];
+  credit_deduction: number;
+  strategic_decision_log: string;
+}
 import { storage } from "../storage";
 
 let openaiClient: OpenAI | null = null;
@@ -80,24 +92,24 @@ export interface ScopeValidationResult {
   error?: string;
 }
 
-export async function validateScopeCost(
+async function validateScopeCost(
   targets: string[],
   userId: string,
-  planLevel?: PlanLevel
+  planLevel?: string
 ): Promise<ScopeValidationResult> {
   const userCredits = await storage.getUserCredits(userId);
   const effectivePlanLevel = planLevel || userCredits.planLevel;
   const scopeCost = calculateScopeCost(targets, effectivePlanLevel);
   
-  if (userCredits.balance < scopeCost.totalCost) {
-    return {
-      valid: false,
-      scopeCost,
-      availableCredits: userCredits.balance,
-      shortfall: scopeCost.totalCost - userCredits.balance,
-      error: `FAIL-FAST: Insufficient credits for scope. Required: ${scopeCost.totalCost} credits (${scopeCost.targetCount} targets x ${scopeCost.costPerTarget} credits/target). Available: ${userCredits.balance}. Shortfall: ${scopeCost.totalCost - userCredits.balance} credits.`,
-    };
-  }
+    if (userCredits.balance < scopeCost.totalCost) {
+      return {
+        valid: false,
+        scopeCost,
+        availableCredits: userCredits.balance,
+        shortfall: scopeCost.totalCost - userCredits.balance,
+        error: `Insufficient credits. Required: ${scopeCost.totalCost}, Available: ${userCredits.balance}`,
+      };
+    }
   
   return {
     valid: true,
@@ -109,7 +121,7 @@ export async function validateScopeCost(
 async function executeOSINTQuery(
   target: string,
   queryType: string,
-  planLevel: PlanLevel,
+  planLevel: string,
   llmModel: string
 ): Promise<{ subdomains: string[]; technologies: string[] }> {
   const openai = getOpenAIClient();
@@ -157,7 +169,7 @@ Respond with JSON in this format:
 async function generateStrategicPlan(
   target: string,
   reconData: { ip: string; hostname: string; ports: number[]; services: { port: number; service: string; version?: string }[] },
-  planLevel: PlanLevel,
+  planLevel: string,
   llmModel: string
 ): Promise<string> {
   const openai = getOpenAIClient();
@@ -210,7 +222,7 @@ Provide a detailed strategic log that will guide the next agent.`;
 
 async function reconSingleTarget(
   target: string,
-  planLevel: PlanLevel,
+  planLevel: string,
   llmModel: string,
   costPerTarget: number
 ): Promise<SingleTargetReconFindings> {
@@ -250,7 +262,7 @@ export async function runReconAgentBatch(
   targets: string[],
   onProgress: (progress: number) => void,
   context: ReconExecutionContext
-): Promise<ReconFindings> {
+): Promise<any> {
   if (!context?.userId) {
     throw new Error("User ID is required for recon execution");
   }
@@ -287,7 +299,7 @@ export async function runReconAgentBatch(
     
     const targetResult = await reconSingleTarget(
       target,
-      planLevel,
+      planLevel as string,
       planConfig.llmModel,
       planConfig.creditCostPerTarget
     );
@@ -360,6 +372,7 @@ export async function runReconAgentBatch(
     plan_level: planLevel,
     osint_queries_made: osintQueriesMade,
     remaining_credits: finalCredits.balance,
+    target_results: targetResults,
   };
 }
 
@@ -368,7 +381,7 @@ export async function runReconAgent(
   onProgress: (progress: number) => void,
   context?: ReconExecutionContext,
   scanId?: string
-): Promise<ReconFindings> {
+): Promise<any> {
   if (!context?.userId) {
     throw new Error("User ID is required for recon execution");
   }
