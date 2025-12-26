@@ -146,6 +146,10 @@ async function executeNucleiTurbo(
     emitStdoutLog(scanId, fullCmdLog, { agentLabel: "NUCLEI-TURBO", type: "info" });
     emitExecLog(scanId, fullCmdLog, { agentLabel: "NUCLEI-TURBO" });
     
+    console.log("CRITICAL_CHECK: Command is about to run with -ni flag");
+    console.log("CRITICAL_CHECK: Arguments array:", nucleiArgs);
+    console.log("CRITICAL_CHECK: shell is FALSE (not using shell interpretation)");
+    
     const child = spawn(nucleiBinary, nucleiArgs, { 
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],

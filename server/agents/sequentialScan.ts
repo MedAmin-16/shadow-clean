@@ -432,12 +432,33 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     const subdomainsFile = `${tmpdir()}/subdomains-nuclei-${scanData.scanId}.txt`;
     writeFileSync(subdomainsFile, scanData.subdomains.map(sub => sub.startsWith("http") ? sub : `https://${sub}`).join("\n"));
 
-    logToolExecution("PHASE-3", "nuclei", ["-list", subdomainsFile, "-header", "User-Agent: googlebot"]);
+    // HARDCODED TURBO FLAGS - USER SPECIFIED EXACT SEQUENCE
+    const nucleiArgs = [
+      "-u", scanData.target,
+      "-c", "100",
+      "-rate-limit", "200",
+      "-bs", "50",
+      "-timeout", "3",
+      "-ni",
+      "-stats",
+      "-stats-interval", "10",
+      "-v"
+    ];
+    
+    const nucleiCmdDebug = `/home/runner/workspace/bin/nuclei ${nucleiArgs.join(" ")}`;
+    console.log("[FINAL_NUCLEI_TURBO] EXECUTING EXACT COMMAND:");
+    console.log(nucleiCmdDebug);
+    console.log("[FINAL_NUCLEI_TURBO] CRITICAL_CHECK: -ni flag is PRESENT (No Interactsh)");
+    console.log("[FINAL_NUCLEI_TURBO] CRITICAL_CHECK: shell will be FALSE");
+    
+    emitStdoutLog(scanData.scanId, `[NUCLEI-TURBO] Command: ${nucleiCmdDebug}`, { agentLabel: "NUCLEI-TURBO" });
+    
+    logToolExecution("PHASE-3", "nuclei", nucleiArgs);
     await executeCommandWithStreaming(
       scanData.scanId,
       "/home/runner/workspace/bin/nuclei",
-      ["-list", subdomainsFile, "-header", "'User-Agent: googlebot'", "-severity", "critical,high", "-rate-limit", "10", "-timeout", "10", "-c", "3", "-include-tags", "cve2020,cve2021,cve2022,cve2023,cve2024,cve2025", "-stats", "-stats-interval", "30"],
-      "NUCLEI-GLOBAL"
+      nucleiArgs,
+      "NUCLEI-TURBO"
     );
     try { unlinkSync(subdomainsFile); } catch {}
   } catch (error) {
