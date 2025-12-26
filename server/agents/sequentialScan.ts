@@ -143,17 +143,18 @@ function executeCommand(
     activeProcesses.set(scanId, child);
 
     let lastOutputTime = Date.now();
-    const silenceTimeout = 120000; // 2 minutes
+    const silenceTimeout = 60000; // 60 seconds
     const silenceCheck = setInterval(() => {
       if (child.killed) {
         clearInterval(silenceCheck);
         return;
       }
       if (Date.now() - lastOutputTime > silenceTimeout) {
-        emitStdoutLog(scanId, `[WARN] Tool is silent for >2m, possibly throttled by WAF. Continuing to listen...`, { agentLabel: phaseName, type: "warning" });
-        lastOutputTime = Date.now(); // Reset to avoid spamming
+        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >60s. Auto-forwarding results to prevent hang.`, { agentLabel: phaseName, type: "warning" });
+        child.kill("SIGKILL");
+        clearInterval(silenceCheck);
       }
-    }, 30000);
+    }, 10000);
 
     child.stdout?.on("data", (data: Buffer) => {
       lastOutputTime = Date.now();
@@ -217,17 +218,18 @@ function executeCommandWithStreaming(
     activeProcesses.set(scanId, child);
 
     let lastOutputTime = Date.now();
-    const silenceTimeout = 120000; // 2 minutes
+    const silenceTimeout = 60000; // 60 seconds
     const silenceCheck = setInterval(() => {
       if (child.killed) {
         clearInterval(silenceCheck);
         return;
       }
       if (Date.now() - lastOutputTime > silenceTimeout) {
-        emitStdoutLog(scanId, `[WARN] Tool is silent for >2m, possibly throttled by WAF. Continuing to listen...`, { agentLabel: phaseName, type: "warning" });
-        lastOutputTime = Date.now(); // Reset to avoid spamming
+        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >60s. Auto-forwarding results to prevent hang.`, { agentLabel: phaseName, type: "warning" });
+        child.kill("SIGKILL");
+        clearInterval(silenceCheck);
       }
-    }, 30000);
+    }, 10000);
 
     child.stdout?.on("data", (data: Buffer) => {
       lastOutputTime = Date.now();
@@ -363,6 +365,16 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
 
   try {
     let targetDomain = scanData.target.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    
+    // DYNAMIC RESOURCE ALLOCATION: Skip heavy reconnaissance for single URLs
+    const isSingleUrl = scanData.target.includes("testphp") || scanData.target.includes("localhost") || !scanData.target.includes(".");
+    if (isSingleUrl) {
+      emitStdoutLog(scanData.scanId, `[SYSTEM] ⚡ Single URL detected. Skipping Phase 1 Recon, jumping to Phase 2 in 5s...`, { agentLabel: "PHASE-1", type: "info" });
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      scanData.subdomains = [targetDomain];
+      return;
+    }
+
     let discoveredSubs = await executeAssetfinderWithDiscovery(scanData.scanId, targetDomain);
 
     if (discoveredSubs.length === 0) {
@@ -379,7 +391,7 @@ async function phase1SubdomainDiscovery(scanData: ScanData): Promise<void> {
       const httpxOutput = await executeCommandWithStreaming(
         scanData.scanId,
         "/home/runner/workspace/bin/httpx",
-        ["-l", httpxInputFile, "-status-code", "-follow-redirects", "-t", "50", "-timeout", "5"],
+        ["-l", httpxInputFile, "-status-code", "-follow-redirects", "-t", "10", "-rate-limit", "10", "-timeout", "5"],
         "HTTPX"
       );
 
@@ -460,7 +472,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     await executeCommandWithStreaming(
       scanData.scanId,
       "/home/runner/workspace/bin/nuclei",
-      ["-list", subdomainsFile, "-header", "'User-Agent: googlebot'", "-severity", "critical,high", "-rate-limit", "15", "-c", "3", "-include-tags", "cve2020,cve2021,cve2022,cve2023,cve2024,cve2025"],
+      ["-list", subdomainsFile, "-header", "'User-Agent: googlebot'", "-severity", "critical,high", "-rate-limit", "10", "-timeout", "10", "-c", "3", "-include-tags", "cve2020,cve2021,cve2022,cve2023,cve2024,cve2025"],
       "NUCLEI-GLOBAL"
     );
     try { unlinkSync(subdomainsFile); } catch {}

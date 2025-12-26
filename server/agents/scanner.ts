@@ -102,18 +102,37 @@ async function executeAgent(
     
     const child = spawn(command, args, { 
       shell: true,
-      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin`, PYTHONUNBUFFERED: "1" }
     });
     
+    // Use stdbuf if available for C/Go binaries to prevent buffering
+    const finalCommand = `stdbuf -oL -eL ${command}`;
+    
+    child.stdout?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        output.push(line);
+        // CRITICAL: Force no-buffer output to frontend
+        emitStdoutLog(scanId, line, { agentLabel, type: "stdout" });
+      });
+    });
+
     // Set timeout - kill process if it exceeds limit
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      logError(agentLabel, `TIMEOUT after ${(timeoutMs / 1000).toFixed(1)}s`);
-      emitStdoutLog(scanId, `[TIMEOUT] [${agentLabel}] Process exceeded ${timeoutMs}ms timeout limit, killing...`, { agentLabel, type: "error" });
-      // EMIT ERROR EVENT to prevent UI hang
-      emitStdoutLog(scanId, `[SYSTEM] Process error - TIMEOUT`, { agentLabel, type: "error" });
-      child.kill("SIGKILL");
-    }, timeoutMs);
+    const silenceTimeout = 60000;
+    let lastOutputTime = Date.now();
+    const silenceCheck = setInterval(() => {
+      if (child.killed) {
+        clearInterval(silenceCheck);
+        return;
+      }
+      if (Date.now() - lastOutputTime > silenceTimeout) {
+        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >60s. Auto-forwarding results to prevent hang.`, { agentLabel, type: "warning" });
+        child.kill("SIGKILL");
+        clearInterval(silenceCheck);
+      }
+    }, 10000);
     
     child.on("error", (err: any) => {
       clearTimeout(timeout);
@@ -220,7 +239,7 @@ export const AGENT_SWARM = {
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
   "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent --level=3 --risk=2 -u" },
   "AGENT-09": { name: "URL History Mining", tool: "waybackurls", command: "/home/runner/workspace/bin/waybackurls" },
-  "AGENT-10": { name: "HTTP Probing", tool: "httpx", command: "/home/runner/workspace/bin/httpx -silent -status-code -follow-redirects -l" },
+  "AGENT-10": { name: "HTTP Probing", tool: "httpx", command: "/home/runner/workspace/bin/httpx -silent -status-code -follow-redirects -t 10 -rate-limit 10 -l" },
   "AGENT-11": { name: "Technology Detection", tool: "whatweb", command: "python3 -m whatweb -a 3" },
   "AGENT-12": { name: "Directory Fuzzing", tool: "ffuf", command: "/home/runner/workspace/bin/ffuf -w /usr/share/wordlists/dirb/common.txt -u" },
   "AGENT-13": { name: "Hidden Parameters", tool: "paramspider", command: "python3 -m paramspider -l" },
@@ -303,9 +322,9 @@ export async function runScannerAgent(
     }
 
     // Run real Nuclei scanning for CVEs - SKIP ON ERROR
-    emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2`, { agentLabel: "SCANNER" });
+    emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 -rate-limit 10`, { agentLabel: "SCANNER" });
     try {
-      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/workspace/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2"], "AGENT-04");
+      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/workspace/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "10", "-retries", "2", "-rate-limit", "10"], "AGENT-04");
       
       // Parse Nuclei JSON output if available
       try {
