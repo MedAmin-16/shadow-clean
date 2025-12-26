@@ -474,7 +474,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
  */
 async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
   const bannerText = createBanner("PHASE-4: TARGETED EXPLOITATION");
-  logPhaseInfo("PHASE-4", "Starting global XSS injection testing...", icons.vuln);
+  logPhaseInfo("PHASE-4", "Starting global XSS injection testing...", icons.injection);
   emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-4" });
   await updateScanProgress(scanData.scanId, 80, "dalfox");
 
