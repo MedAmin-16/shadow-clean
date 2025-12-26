@@ -296,7 +296,7 @@ export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
   "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -system-chromium --headless-no-sandbox -it 0 -silent -u" },
-  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -duc -silent -timeout 4 -c 50 -rate-limit 150 -bulk-size 25 -stats -stats-interval 30 -u" },
+  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -timeout 4 -c 50 -rl 150 -bs 25 -v -stats -u" },
   "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -timeout 4 -rate-limit 150 -u" },
   "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 -m commix -u" },
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
@@ -385,9 +385,10 @@ export async function runScannerAgent(
     }
 
     // Run real Nuclei scanning for CVEs - SKIP ON ERROR
-    emitStdoutLog(scanId, `[RUNNING] nuclei -u ${target} -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 4 -c 50 -rate-limit 150 -bulk-size 25 (TURBO MODE)`, { agentLabel: "SCANNER" });
+    const nucleiCmd = `/home/runner/workspace/bin/nuclei -u ${target} -t /home/runner/workspace/nuclei-templates -ni -timeout 4 -c 50 -rl 150 -bs 25 -v -stats`;
+    emitStdoutLog(scanId, `[RUNNING] FULL COMMAND: ${nucleiCmd}`, { agentLabel: "SCANNER" });
     try {
-      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/workspace/nuclei-templates", "-ni", "-duc", "-stats", "-timeout", "4", "-c", "50", "-rate-limit", "150", "-bulk-size", "25"], "AGENT-04");
+      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/workspace/nuclei-templates", "-ni", "-timeout", "4", "-c", "50", "-rl", "150", "-bs", "25", "-v", "-stats"], "AGENT-04");
       
       // Parse Nuclei JSON output if available
       try {
@@ -613,9 +614,11 @@ export async function runScannerAgent(
           emitStdoutLog(scanId, `[${agentKey}] Commix execution error or skipped`, { agentLabel: agentKey });
         }
       } else if (agentKey === "AGENT-04") {
-        // Nuclei CVE Scanner
+        // Nuclei CVE Scanner - TURBO MODE: -ni disables Interactsh, -c 50 concurrency, -rl 150 rate limit
         try {
           const args = agent.command.split(" ").concat([currentTarget]);
+          const fullCmd = `/home/runner/workspace/bin/nuclei ${args.join(" ")}`;
+          emitStdoutLog(scanId, `[${agentKey}] FULL TURBO CMD: ${fullCmd} | -ni (no OAST) | -c 50 (concurrency) | -rl 150 (rate/sec)`, { agentLabel: agentKey, type: "info" });
           const output = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", args, agentKey);
           if (output.includes("[critical]") || output.includes("[high]")) {
             // Basic parsing for Nuclei hits
