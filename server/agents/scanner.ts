@@ -115,6 +115,85 @@ function formatToolOutput(line: string, agentLabel: string): { text: string; typ
 }
 
 /**
+ * NUCLEI TURBO MODE EXECUTOR - HARDCODED FLAGS, NO INTERFERENCE
+ */
+async function executeNucleiTurbo(
+  scanId: string,
+  target: string
+): Promise<string> {
+  return new Promise((resolve) => {
+    const output: string[] = [];
+    
+    // EXACT COMMAND WITH USER-SPECIFIED FLAGS
+    const nucleiCmd = `/home/runner/workspace/bin/nuclei -u ${target} -c 100 -rate-limit 200 -bs 50 -timeout 3 -ni -stats -stats-interval 10 -v`;
+    
+    // PRINT EXACT COMMAND BEFORE EXECUTION
+    const fullCmdLog = `[NUCLEI-TURBO] EXECUTING EXACT COMMAND:\n${nucleiCmd}\n[FLAGS] -ni (no Interactsh) | -c 100 (concurrency) | -rate-limit 200 (RPS) | -bs 50 (bulk-size) | -timeout 3 (timeout) | -stats (stats) | -v (verbose)`;
+    emitStdoutLog(scanId, fullCmdLog, { agentLabel: "NUCLEI-TURBO", type: "info" });
+    emitExecLog(scanId, fullCmdLog, { agentLabel: "NUCLEI-TURBO" });
+    
+    const child = spawn(nucleiCmd, [], { 
+      shell: true,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { 
+        ...process.env, 
+        PATH: `${process.env.PATH}:/home/runner/workspace/bin`
+      }
+    });
+    
+    let lastOutputTime = Date.now();
+
+    child.stdout?.on("data", (data: Buffer) => {
+      lastOutputTime = Date.now();
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        output.push(line);
+        const filtered = formatToolOutput(line, "NUCLEI-TURBO");
+        if (filtered.text) {
+          emitStdoutLog(scanId, filtered.text, { agentLabel: "NUCLEI-TURBO", type: filtered.type });
+        }
+      });
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      lastOutputTime = Date.now();
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        const filtered = formatToolOutput(line, "NUCLEI-TURBO");
+        if (filtered.text) {
+          emitStdoutLog(scanId, filtered.text, { agentLabel: "NUCLEI-TURBO", type: filtered.type });
+        }
+      });
+    });
+
+    const silenceCheck = setInterval(() => {
+      if (child.killed) {
+        clearInterval(silenceCheck);
+        return;
+      }
+      if (Date.now() - lastOutputTime > 300000) {
+        emitStdoutLog(scanId, `[SYSTEM] Nuclei silent for >300s. Auto-forwarding results.`, { agentLabel: "NUCLEI-TURBO", type: "warning" });
+        child.kill("SIGKILL");
+        clearInterval(silenceCheck);
+      }
+    }, 10000);
+
+    child.on("exit", () => {
+      clearInterval(silenceCheck);
+      resolve(output.join("\n"));
+    });
+
+    child.on("error", (err) => {
+      clearInterval(silenceCheck);
+      emitStdoutLog(scanId, `[ERROR] Nuclei execution error: ${err.message}`, { agentLabel: "NUCLEI-TURBO", type: "error" });
+      resolve(output.join("\n"));
+    });
+  });
+}
+
+/**
  * PURE STREAMING SPAWN PATTERN - NO BUFFERING, NO DELAYS
  */
 async function executeAgent(
@@ -384,11 +463,9 @@ export async function runScannerAgent(
       }
     }
 
-    // Run real Nuclei scanning for CVEs - SKIP ON ERROR
-    const nucleiCmd = `/home/runner/workspace/bin/nuclei -u ${target} -t /home/runner/workspace/nuclei-templates -ni -timeout 4 -c 50 -rl 150 -bs 25 -v -stats`;
-    emitStdoutLog(scanId, `[RUNNING] FULL COMMAND: ${nucleiCmd}`, { agentLabel: "SCANNER" });
+    // Run real Nuclei scanning for CVEs - TURBO MODE - SKIP ON ERROR
     try {
-      const nucleiOutput = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", target, "-t", "/home/runner/workspace/nuclei-templates", "-ni", "-timeout", "4", "-c", "50", "-rl", "150", "-bs", "25", "-v", "-stats"], "AGENT-04");
+      const nucleiOutput = await executeNucleiTurbo(scanId, target);
       
       // Parse Nuclei JSON output if available
       try {
@@ -614,12 +691,9 @@ export async function runScannerAgent(
           emitStdoutLog(scanId, `[${agentKey}] Commix execution error or skipped`, { agentLabel: agentKey });
         }
       } else if (agentKey === "AGENT-04") {
-        // Nuclei CVE Scanner - TURBO MODE: -ni disables Interactsh, -c 50 concurrency, -rl 150 rate limit
+        // Nuclei CVE Scanner - HARDCODED TURBO MODE
         try {
-          const args = agent.command.split(" ").concat([currentTarget]);
-          const fullCmd = `/home/runner/workspace/bin/nuclei ${args.join(" ")}`;
-          emitStdoutLog(scanId, `[${agentKey}] FULL TURBO CMD: ${fullCmd} | -ni (no OAST) | -c 50 (concurrency) | -rl 150 (rate/sec)`, { agentLabel: agentKey, type: "info" });
-          const output = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", args, agentKey);
+          const output = await executeNucleiTurbo(scanId, currentTarget);
           if (output.includes("[critical]") || output.includes("[high]")) {
             // Basic parsing for Nuclei hits
             const lines = output.split("\n");
