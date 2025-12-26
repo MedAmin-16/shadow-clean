@@ -303,7 +303,7 @@ export async function runReconAgentBatch(
   let subdomains: string[] = primaryTarget?.subdomains || [];
   
   onProgress(92);
-  if (planConfig.osintAccess !== 'limited' || planLevel !== 'STANDARD') {
+  if (planLevel === 'PRO' || planLevel === 'ELITE') {
     const osintCost = planConfig.osintQueryCost;
     const currentBalance = await storage.getUserCredits(userId);
     
@@ -360,13 +360,6 @@ export async function runReconAgentBatch(
     plan_level: planLevel,
     osint_queries_made: osintQueriesMade,
     remaining_credits: finalCredits.balance,
-    scope_summary: {
-      total_targets: targets.length,
-      targets_processed: targets,
-      cumulative_cost: validation.scopeCost.totalCost,
-      cost_per_target: planConfig.creditCostPerTarget,
-    },
-    target_results: targetResults,
   };
 }
 
