@@ -124,16 +124,30 @@ async function executeNucleiTurbo(
   return new Promise((resolve) => {
     const output: string[] = [];
     
-    // EXACT COMMAND WITH USER-SPECIFIED FLAGS
-    const nucleiCmd = `/home/runner/workspace/bin/nuclei -u ${target} -c 100 -rate-limit 200 -bs 50 -timeout 3 -ni -stats -stats-interval 10 -v`;
+    // EXACT COMMAND WITH USER-SPECIFIED FLAGS - HARDCODED, NO VARIABLES
+    const nucleiBinary = "/home/runner/workspace/bin/nuclei";
+    const nucleiArgs = [
+      "-u", target,
+      "-c", "100",
+      "-rate-limit", "200",
+      "-bs", "50",
+      "-timeout", "3",
+      "-ni",
+      "-stats",
+      "-stats-interval", "10",
+      "-v"
+    ];
     
-    // PRINT EXACT COMMAND BEFORE EXECUTION
-    const fullCmdLog = `[NUCLEI-TURBO] EXECUTING EXACT COMMAND:\n${nucleiCmd}\n[FLAGS] -ni (no Interactsh) | -c 100 (concurrency) | -rate-limit 200 (RPS) | -bs 50 (bulk-size) | -timeout 3 (timeout) | -stats (stats) | -v (verbose)`;
+    const nucleiCmd = `${nucleiBinary} ${nucleiArgs.join(" ")}`;
+    
+    // PRINT EXACT COMMAND BEFORE EXECUTION - CONSOLE VISIBLE
+    const fullCmdLog = `[NUCLEI-TURBO] EXECUTING:\n${nucleiCmd}\n[CRITICAL FLAGS] -ni=DISABLED_INTERACTSH | -rate-limit=200_RPS | -c=100_CONCURRENCY | -bs=50_BULK_SIZE | -timeout=3s | -stats=ENABLED | -v=VERBOSE`;
+    console.log(fullCmdLog); // CONSOLE OUTPUT FOR VERIFICATION
     emitStdoutLog(scanId, fullCmdLog, { agentLabel: "NUCLEI-TURBO", type: "info" });
     emitExecLog(scanId, fullCmdLog, { agentLabel: "NUCLEI-TURBO" });
     
-    const child = spawn(nucleiCmd, [], { 
-      shell: true,
+    const child = spawn(nucleiBinary, nucleiArgs, { 
+      shell: false,
       stdio: ["pipe", "pipe", "pipe"],
       env: { 
         ...process.env, 
