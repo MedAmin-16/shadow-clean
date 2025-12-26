@@ -12,6 +12,8 @@ import {
   downloadReport,
   getScanHistory,
   stopScan,
+  rescanTarget,
+  exportScanHistory,
 } from "./src/controllers/scanController";
 import {
   createApiKey,
@@ -124,6 +126,8 @@ export async function registerRoutes(
   app.get("/api/scans", optionalSessionAuth, getAllScans);
   app.get("/api/scans/:id", optionalSessionAuth, getScanById);
   app.post("/api/scans/:id/stop", sessionAuth, stopScan);
+  app.get("/api/scans/export", sessionAuth, exportScanHistory);
+  app.post("/api/scans/:id/rescan", sessionAuth, rescanTarget);
   app.delete("/api/scans/:id", sessionAuth, deleteScan);
   
   app.get("/api/projects", getAllProjects);

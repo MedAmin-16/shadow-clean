@@ -361,6 +361,8 @@ export const vulnerabilitiesTable = pgTable("vulnerabilities", {
   remediation: text("remediation"),
   affectedComponent: varchar("affected_component", { length: 255 }),
   discoveredAt: timestamp("discovered_at").notNull().defaultNow(),
+  isArchived: boolean("is_archived").default(false), // Evidence Vault flag
+  evidenceMetadata: jsonb("evidence_metadata"),
 }, (table) => ({
   scanIdIdx: index("vulnerabilities_scan_id_idx").on(table.scanId),
   userIdIdx: index("vulnerabilities_user_id_idx").on(table.userId),

@@ -12,6 +12,7 @@ import SignupPage from "@/pages/signup";
 import DashboardPage from "@/pages/dashboard";
 import ProjectsPage from "@/pages/projects";
 import ScansPage from "@/pages/scans";
+import HistoryPage from "@/pages/history";
 import ReportsPage from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
 import AdminPage from "@/pages/admin";
@@ -46,6 +47,7 @@ function DashboardRouter() {
       <Route path="/dashboard" component={DashboardPage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/scans" component={ScansPage} />
+      <Route path="/history" component={HistoryPage} />
       <Route path="/shadow-logic" component={ShadowLogicPage} />
       <Route path="/reports" component={ReportsPage} />
       <Route path="/settings" component={SettingsPage} />

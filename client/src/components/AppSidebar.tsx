@@ -23,6 +23,7 @@ import {
   LogOut,
   Key,
   Brain,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -46,6 +47,7 @@ const menuItems: MenuItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Projects", url: "/projects", icon: FolderKanban },
   { title: "Scans", url: "/scans", icon: Radar },
+  { title: "History", url: "/history", icon: Clock },
   { title: "ShadowLogic", url: "/shadow-logic", icon: Brain, elite: true },
   { title: "Reports", url: "/reports", icon: FileText },
   { title: "Integrations", url: "/integrations", icon: Key },
