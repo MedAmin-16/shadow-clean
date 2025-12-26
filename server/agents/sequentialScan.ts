@@ -119,6 +119,41 @@ interface ScanData {
 }
 
 /**
+ * Filter and format tool output for cleaner terminal display
+ */
+function formatToolOutput(line: string, agentLabel: string): { text: string; type: "info" | "error" | "stdout" | "finding" } {
+  const lowerLine = line.toLowerCase();
+  
+  // GAU config warning filter
+  if (line.includes("config file") && line.includes(".gau.toml") && line.includes("not found")) {
+    return { text: "", type: "info" }; 
+  }
+
+  // Smart Information Filtering
+  if (
+    line.includes("[INF]") || 
+    line.includes("[Information]") || 
+    lowerLine.includes("installing...") ||
+    lowerLine.includes("loading") ||
+    lowerLine.includes("updating") ||
+    line.includes("[stats]") ||
+    line.includes("%")
+  ) {
+    return { text: line, type: "info" };
+  }
+
+  // Default to stdout for most tool output unless it's clearly an error
+  if (lowerLine.includes("error") || lowerLine.includes("failed") || lowerLine.includes("fatal")) {
+    // Only treat as error if it's not a known false positive or info line
+    if (!lowerLine.includes("info") && !lowerLine.includes("debug") && !lowerLine.includes("warning")) {
+      return { text: line, type: "error" };
+    }
+  }
+
+  return { text: line, type: "stdout" };
+}
+
+/**
  * Execute a command with spawn() and return output
  */
 function executeCommand(
@@ -133,24 +168,33 @@ function executeCommand(
 
     emitExecLog(scanId, `[${phaseName}] $ ${command} ${args.join(" ")}`);
 
-    const child = spawn(command, args, { 
+    // Use stdbuf for real-time output
+    const spawnCmd = "stdbuf";
+    const spawnArgs = ["-oL", "-eL", command, ...args];
+
+    const child = spawn(spawnCmd, spawnArgs, { 
       shell: true,
-      detached: false,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
+      env: { 
+        ...process.env, 
+        PATH: `${process.env.PATH}:/home/runner/workspace/bin`,
+        PYTHONUNBUFFERED: "1"
+      }
     });
 
     activeProcesses.set(scanId, child);
 
     let lastOutputTime = Date.now();
-    const silenceTimeout = 60000; // 60 seconds
+    // NUCLEI GRACE PERIOD: 5 minutes (300s) for Nuclei, 60s for others
+    const silenceTimeout = phaseName.includes("NUCLEI") ? 300000 : 60000;
+    
     const silenceCheck = setInterval(() => {
       if (child.killed) {
         clearInterval(silenceCheck);
         return;
       }
       if (Date.now() - lastOutputTime > silenceTimeout) {
-        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >60s. Auto-forwarding results to prevent hang.`, { agentLabel: phaseName, type: "warning" });
+        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >${silenceTimeout/1000}s. Auto-forwarding results to prevent hang.`, { agentLabel: phaseName, type: "warning" });
         child.kill("SIGKILL");
         clearInterval(silenceCheck);
       }
@@ -162,6 +206,10 @@ function executeCommand(
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
         output.push(line);
+        const filtered = formatToolOutput(line, phaseName);
+        if (filtered.text) {
+          emitStdoutLog(scanId, filtered.text, { agentLabel: phaseName, type: filtered.type });
+        }
       });
     });
 
@@ -170,7 +218,10 @@ function executeCommand(
       const text = data.toString();
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
-        emitStdoutLog(scanId, `[${phaseName}] [ERROR] ${line}`, { agentLabel: phaseName, type: "error" });
+        const filtered = formatToolOutput(line, phaseName);
+        if (filtered.text) {
+          emitStdoutLog(scanId, filtered.text, { agentLabel: phaseName, type: filtered.type });
+        }
         errorOutput.push(line);
       });
     });
@@ -202,95 +253,8 @@ function executeCommandWithStreaming(
   args: string[],
   phaseName: string
 ): Promise<string> {
-  return new Promise((resolve) => {
-    const output: string[] = [];
-    const errorOutput: string[] = [];
-
-    emitExecLog(scanId, `[${phaseName}] $ ${command} ${args.join(" ")}`);
-
-    const child = spawn(command, args, { 
-      shell: true,
-      detached: false,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin` }
-    });
-
-    activeProcesses.set(scanId, child);
-
-    let lastOutputTime = Date.now();
-    const silenceTimeout = 60000; // 60 seconds
-    const silenceCheck = setInterval(() => {
-      if (child.killed) {
-        clearInterval(silenceCheck);
-        return;
-      }
-      if (Date.now() - lastOutputTime > silenceTimeout) {
-        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >60s. Auto-forwarding results to prevent hang.`, { agentLabel: phaseName, type: "warning" });
-        child.kill("SIGKILL");
-        clearInterval(silenceCheck);
-      }
-    }, 10000);
-
-    child.stdout?.on("data", (data: Buffer) => {
-      lastOutputTime = Date.now();
-      const text = data.toString();
-      const lines = text.split("\n").filter(l => l.trim());
-      lines.forEach(line => {
-        output.push(line);
-        
-        if (line.includes("[INF]")) {
-          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "info" });
-        } else if (line.includes("[WRN]")) {
-          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "warning" });
-        } else if (line.match(/\[.*\]\s\[.*\]\s\[(critical|high|medium|low|info)\]/i)) {
-          emitStdoutLog(scanId, `🚨 **[CRITICAL HIT]** ${line}`, { agentLabel: phaseName, type: "finding" });
-          const urlMatch = line.match(/https?:\/\/[^\s]+/);
-          if (urlMatch) {
-            const vulnUrl = urlMatch[0];
-            captureScreenshot(scanId, vulnUrl, `nuclei-hit-${Date.now()}`);
-          }
-        } else {
-          if (!line.includes("[INF]") && !line.includes("[WRN]") && (line.includes("http://") || line.includes("https://"))) {
-            emitStdoutLog(scanId, `[${phaseName}] ✓ ${line}`, { agentLabel: phaseName, type: "success" });
-          } else {
-            emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "stdout" });
-          }
-        }
-      });
-    });
-
-    child.stderr?.on("data", (data: Buffer) => {
-      lastOutputTime = Date.now();
-      const text = data.toString();
-      const lines = text.split("\n").filter(l => l.trim());
-      lines.forEach(line => {
-        if (line.includes("[INF]")) {
-          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "info" });
-        } else if (line.includes("[WRN]")) {
-          emitStdoutLog(scanId, line, { agentLabel: phaseName, type: "warning" });
-        } else {
-          emitStdoutLog(scanId, `[${phaseName}] [ERROR] ${line}`, { agentLabel: phaseName, type: "error" });
-        }
-        errorOutput.push(line);
-      });
-    });
-
-    child.on("close", (code: number) => {
-      clearInterval(silenceCheck);
-      activeProcesses.delete(scanId);
-      if (code !== 0 && code !== null) {
-        emitStdoutLog(scanId, `[${phaseName}] ⚠️ Command exited with code ${code}`, { agentLabel: phaseName, type: "warning" });
-      }
-      resolve(output.join("\n"));
-    });
-
-    child.on("error", (err: any) => {
-      clearInterval(silenceCheck);
-      emitErrorLog(scanId, `[${phaseName}] Process spawn error: ${err.message} (Code: ${err.code})`);
-      emitStdoutLog(scanId, `[SYSTEM] Process error - ${err.code || 'UNKNOWN'}: ${err.message}`, { agentLabel: phaseName, type: "error" });
-      resolve("");
-    });
-  });
+  // Merged logic into executeCommand for consistency
+  return executeCommand(scanId, command, args, phaseName);
 }
 
 /**
@@ -472,7 +436,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     await executeCommandWithStreaming(
       scanData.scanId,
       "/home/runner/workspace/bin/nuclei",
-      ["-list", subdomainsFile, "-header", "'User-Agent: googlebot'", "-severity", "critical,high", "-rate-limit", "10", "-timeout", "10", "-c", "3", "-include-tags", "cve2020,cve2021,cve2022,cve2023,cve2024,cve2025"],
+      ["-list", subdomainsFile, "-header", "'User-Agent: googlebot'", "-severity", "critical,high", "-rate-limit", "10", "-timeout", "10", "-c", "3", "-include-tags", "cve2020,cve2021,cve2022,cve2023,cve2024,cve2025", "-stats", "-stats-interval", "30"],
       "NUCLEI-GLOBAL"
     );
     try { unlinkSync(subdomainsFile); } catch {}

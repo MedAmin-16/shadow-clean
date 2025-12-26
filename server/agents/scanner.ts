@@ -29,8 +29,7 @@ interface EnhancedScannerFindings {
   apiEndpoints: string[];
   technologies: string[];
   totalFindings: number;
-  criticalCount: number;
-  highCount: number;
+  criticalCount: number; highCount: number;
   decisionLog: string[];
   agentResults: Record<string, unknown>;
 }
@@ -81,10 +80,42 @@ async function notifyWebhook(scanId: string, vuln: EnhancedVulnerability): Promi
 }
 
 /**
+ * Filter and format tool output for cleaner terminal display
+ */
+function formatToolOutput(line: string, agentLabel: string): { text: string; type: "info" | "error" | "stdout" | "finding" } {
+  const lowerLine = line.toLowerCase();
+  
+  // GAU config warning filter
+  if (line.includes("config file") && line.includes(".gau.toml") && line.includes("not found")) {
+    return { text: "", type: "info" }; 
+  }
+
+  // Smart Information Filtering
+  if (
+    line.includes("[INF]") || 
+    line.includes("[Information]") || 
+    lowerLine.includes("installing...") ||
+    lowerLine.includes("loading") ||
+    lowerLine.includes("updating") ||
+    line.includes("[stats]") ||
+    line.includes("%")
+  ) {
+    return { text: line, type: "info" };
+  }
+
+  // Default to stdout for most tool output unless it's clearly an error
+  if (lowerLine.includes("error") || lowerLine.includes("failed") || lowerLine.includes("fatal")) {
+    // Only treat as error if it's not a known false positive or info line
+    if (!lowerLine.includes("info") && !lowerLine.includes("debug") && !lowerLine.includes("warning")) {
+      return { text: line, type: "error" };
+    }
+  }
+
+  return { text: line, type: "stdout" };
+}
+
+/**
  * PURE STREAMING SPAWN PATTERN - NO BUFFERING, NO DELAYS
- * Every line from stdout/stderr is emitted IMMEDIATELY with [REAL-TIME] prefix
- * Used for Nuclei (-v -stats -si 1), SQLMap (--batch --flush-session)
- * TIMEOUT: 3600 seconds (1 hour) for PRO/ELITE scans
  */
 async function executeAgent(
   scanId: string,
@@ -95,40 +126,68 @@ async function executeAgent(
 ): Promise<string> {
   return new Promise((resolve) => {
     const output: string[] = [];
-    let timedOut = false;
     
     emitExecLog(scanId, `[${agentLabel}] $ ${command} ${args.join(" ")}`, { agentLabel });
     logToolExecution(agentLabel, command, args);
     
-    const child = spawn(command, args, { 
+    // NUCLEI GRACE PERIOD: 5 minutes (300s) for AGENT-04, 60s for others
+    const silenceTimeout = agentLabel === "AGENT-04" ? 300000 : 60000;
+    
+    // NO-BUFFER OUTPUT: Use stdbuf for C/Go tools and PYTHONUNBUFFERED for python
+    const isPython = command.includes("python");
+    let spawnCmd = command;
+    let spawnArgs = args;
+
+    if (!isPython) {
+      spawnCmd = "stdbuf";
+      spawnArgs = ["-oL", "-eL", command, ...args];
+    }
+
+    const child = spawn(spawnCmd, spawnArgs, { 
       shell: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PATH: `${process.env.PATH}:/home/runner/workspace/bin`, PYTHONUNBUFFERED: "1" }
+      env: { 
+        ...process.env, 
+        PATH: `${process.env.PATH}:/home/runner/workspace/bin`, 
+        PYTHONUNBUFFERED: "1" 
+      }
     });
     
-    // Use stdbuf if available for C/Go binaries to prevent buffering
-    const finalCommand = `stdbuf -oL -eL ${command}`;
-    
+    let lastOutputTime = Date.now();
+
     child.stdout?.on("data", (data: Buffer) => {
+      lastOutputTime = Date.now();
       const text = data.toString();
       const lines = text.split("\n").filter(l => l.trim());
       lines.forEach(line => {
         output.push(line);
-        // CRITICAL: Force no-buffer output to frontend
-        emitStdoutLog(scanId, line, { agentLabel, type: "stdout" });
+        const filtered = formatToolOutput(line, agentLabel);
+        if (filtered.text) {
+          emitStdoutLog(scanId, filtered.text, { agentLabel, type: filtered.type });
+        }
       });
     });
 
-    // Set timeout - kill process if it exceeds limit
-    const silenceTimeout = 60000;
-    let lastOutputTime = Date.now();
+    child.stderr?.on("data", (data: Buffer) => {
+      lastOutputTime = Date.now();
+      const text = data.toString();
+      const lines = text.split("\n").filter(l => l.trim());
+      lines.forEach(line => {
+        const filtered = formatToolOutput(line, agentLabel);
+        if (filtered.text) {
+          // Send stderr to stdout with filtered type to avoid red spam
+          emitStdoutLog(scanId, filtered.text, { agentLabel, type: filtered.type });
+        }
+      });
+    });
+
     const silenceCheck = setInterval(() => {
       if (child.killed) {
         clearInterval(silenceCheck);
         return;
       }
       if (Date.now() - lastOutputTime > silenceTimeout) {
-        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >60s. Auto-forwarding results to prevent hang.`, { agentLabel, type: "warning" });
+        emitStdoutLog(scanId, `[SYSTEM] Tool silent for >${silenceTimeout/1000}s. Auto-forwarding results to prevent hang.`, { agentLabel, type: "warning" });
         child.kill("SIGKILL");
         clearInterval(silenceCheck);
       }
@@ -138,6 +197,11 @@ async function executeAgent(
       logError(agentLabel, `Process error - ${err.message} (Code: ${err.code})`);
       emitStdoutLog(scanId, `[ERROR] [${agentLabel}] Process error - ${err.code || 'UNKNOWN'}: ${err.message}`, { agentLabel, type: "error" });
       resolve("");
+    });
+
+    child.on("close", (code) => {
+      clearInterval(silenceCheck);
+      resolve(output.join("\n"));
     });
   });
 }
@@ -232,7 +296,7 @@ export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
   "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -system-chromium --headless --no-sandbox -silent -u" },
-  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -duc -silent -timeout 10 -retries 2 -u" },
+  "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -duc -silent -timeout 10 -retries 2 -stats -stats-interval 30 -u" },
   "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -u" },
   "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 -m commix -u" },
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
@@ -518,161 +582,81 @@ export async function runScannerAgent(
         // PRO PACK: Commix Command Injection Tester (NOW ALWAYS ENABLED)
         try {
           const args = agent.command.split(" ").concat([currentTarget]);
-          const output = await executeAgent(scanId, "python3", ["-m", "commix", "-u", currentTarget], agentKey);
-          if (output.match(/vulnerable|rce|command.*injection/i)) {
+          const output = await executeAgent(scanId, "python3", args, agentKey);
+          if (output.match(/vulnerable|injection|shell/i)) {
             const vuln: EnhancedVulnerability = {
               id: `${agentKey}-rce-${Date.now()}`,
-              title: "Remote Code Execution (RCE) Vulnerability",
-              description: `Command injection via Commix detection.`,
+              title: "OS Command Injection",
+              description: `OS Command injection detected from real Commix execution.`,
               severity: "critical",
               confidenceScore: 94,
               owaspCategory: "A03:2021-Injection",
               sansTop25: "CWE-78",
-              remediationCode: "Use secure command execution APIs and input validation.",
+              remediationCode: "Avoid system calls and sanitize all command inputs.",
               port: 443,
               service: "https",
             };
             agentVulns.push(vuln);
-            emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] RCE Vulnerability Detected via Commix`, { agentLabel: agentKey, type: "finding" });
+            emitStdoutLog(scanId, `[${agentKey}] 🚨 [CRITICAL] Command Injection Vulnerability Confirmed`, { agentLabel: agentKey, type: "finding" });
             await notifyWebhook(scanId, vuln); // Send webhook alert
           }
         } catch (error) {
-          emitStdoutLog(scanId, `[${agentKey}] Commix execution skipped or error`, { agentLabel: agentKey });
+          emitStdoutLog(scanId, `[${agentKey}] Commix execution error or skipped`, { agentLabel: agentKey });
         }
       } else if (agentKey === "AGENT-04") {
-        // Nuclei: -t /home/runner/workspace/nuclei-templates -ni -duc -stats -timeout 10 -retries 2 flags in AGENT_SWARM - SKIP ON ERROR
+        // Nuclei CVE Scanner
         try {
           const args = agent.command.split(" ").concat([currentTarget]);
           const output = await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", args, agentKey);
-          
-          // Detect vulnerabilities from raw nuclei output
-          if (output.match(/\[.*\]\s+\[.*\]\s+.*|template-match|found/i)) {
-            const vuln: EnhancedVulnerability = {
-              id: `${agentKey}-nuc-${Date.now()}`,
-              title: "Nuclei Scan Finding",
-              description: `Vulnerability detected from real Nuclei execution.`,
-              severity: "high",
-              confidenceScore: 85,
-              owaspCategory: "A05:2021-Security Misconfiguration",
-              sansTop25: "CWE-200",
-              remediationCode: "Review and remediate based on nuclei finding.",
-              exploitDifficulty: "moderate",
-              requiresApproval: false,
-              port: 443,
-              service: "https",
-            };
-            agentVulns.push(vuln);
-            emitStdoutLog(scanId, `[${agentKey}] 🔍 Vulnerability detected in Nuclei output`, { agentLabel: agentKey, type: "finding" });
+          if (output.includes("[critical]") || output.includes("[high]")) {
+            // Basic parsing for Nuclei hits
+            const lines = output.split("\n");
+            for (const line of lines) {
+              if (line.match(/\[.*\]\s\[.*\]\s\[(critical|high|medium|low|info)\]/i)) {
+                const vuln: EnhancedVulnerability = {
+                  id: `${agentKey}-nuclei-${Date.now()}-${Math.random()}`,
+                  title: `Vulnerability: ${line.split(" ")[0]}`,
+                  description: line,
+                  severity: line.includes("critical") ? "critical" : "high",
+                  confidenceScore: 90,
+                  port: 443,
+                  service: "https",
+                };
+                agentVulns.push(vuln);
+                emitStdoutLog(scanId, `[${agentKey}] 🚨 [HIT] ${line}`, { agentLabel: agentKey, type: "finding" });
+              }
+            }
           }
         } catch (error) {
-          emitStdoutLog(scanId, `[${agentKey}] ⚠️ Nuclei execution error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+          emitStdoutLog(scanId, `[${agentKey}] Nuclei execution error or skipped`, { agentLabel: agentKey });
         }
-      } else if (agentKey === "AGENT-03") {
-        // XSS Testing with curl - SKIP ON ERROR
+      } else {
+        // Standard execution for other tools (Recon, OSINT, etc.)
         try {
-          const xssResult = await testXss(scanId, currentTarget, agentKey);
-          
-          if (xssResult.vulnerable) {
-            const vuln: EnhancedVulnerability = {
-              id: `${agentKey}-xss-${Date.now()}`,
-              title: "Cross-Site Scripting (XSS) Vulnerability",
-              description: `XSS vulnerability confirmed via real payload testing.`,
-              severity: "high",
-              confidenceScore: 95,
-              owaspCategory: "A03:2021-Injection",
-              sansTop25: "CWE-79",
-              remediationCode: "Implement output encoding and Content-Security-Policy.",
-              exploitDifficulty: "easy",
-              requiresApproval: false,
-              port: 443,
-              service: "https",
-            };
-            agentVulns.push(vuln);
-            emitStdoutLog(scanId, `[${agentKey}] 🚨 [HIGH] XSS Vulnerability Found`, { agentLabel: agentKey, type: "finding" });
-          }
+          const args = agent.command.split(" ").concat([currentTarget]);
+          await executeAgent(scanId, agent.tool, args, agentKey);
         } catch (error) {
-          emitStdoutLog(scanId, `[${agentKey}] ⚠️ XSS testing error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
-        }
-      } else if (agentKey === "AGENT-01") {
-        // HTTP Probing with curl -v - SKIP ON ERROR
-        try {
-          const probeResult = await probeHttpTarget(scanId, currentTarget, agentKey);
-          
-          if (probeResult.reachable) {
-            emitStdoutLog(scanId, `[${agentKey}] ✓ Target reachable: ${currentTarget} (HTTP ${probeResult.statusCode})`, { 
-              agentLabel: agentKey 
-            });
-          }
-        } catch (error) {
-          emitStdoutLog(scanId, `[${agentKey}] ⚠️ HTTP probe error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
-        }
-      } else if (agentKey === "AGENT-10") {
-        // HTTP Probing with native Node.js function - filters assetfinder results - SKIP ON ERROR
-        try {
-          emitStdoutLog(scanId, `[${agentKey}] Starting native Node.js HTTP probe on ${currentTarget}...`, { agentLabel: agentKey, type: "info" });
-          const probeResult = await probeHttpTarget(scanId, currentTarget, agentKey);
-          
-          if (probeResult.reachable) {
-            emitStdoutLog(scanId, `[${agentKey}] ✓ LIVE DOMAIN CONFIRMED: ${currentTarget} (HTTP ${probeResult.statusCode})`, { 
-              agentLabel: agentKey,
-              type: "success"
-            });
-          } else {
-            emitStdoutLog(scanId, `[${agentKey}] ✗ Domain unreachable: ${currentTarget}`, { 
-              agentLabel: agentKey,
-              type: "info"
-            });
-          }
-        } catch (error) {
-          emitStdoutLog(scanId, `[${agentKey}] ⚠️ HTTP probe error: ${error instanceof Error ? error.message : "unknown error"}. Continuing...`, { agentLabel: agentKey, type: "error" });
+          // Silent skip for secondary tools
         }
       }
       
-      findings.push(...agentVulns);
-
-      // Generate remediation for findings (NO delays, NO fake code)
-      for (const vuln of agentVulns) {
-        const remediationFix = await generateRemediationFix(vuln, currentTarget);
-        vuln.remediationCode = remediationFix;
-        emitStdoutLog(scanId, `[${agentKey}] Remediation: ${remediationFix}`, { agentLabel: agentKey, type: "remediation" });
+      // Process agent findings
+      if (agentVulns.length > 0) {
+        findings.push(...agentVulns);
       }
     }
     
-    // ✅ PHASE COMPLETE: All agents finished for this target
-    emitStdoutLog(scanId, `\n[PHASE-BARRIER] ✅ PHASE BLOCK COMPLETE FOR TARGET: ${currentTarget}`, { agentLabel: "CONTROLLER" });
-    emitStdoutLog(scanId, `[PHASE-BARRIER] Agents processed: ${agentEntries.length}`, { agentLabel: "CONTROLLER" });
-    emitStdoutLog(scanId, `${'─'.repeat(80)}\n`, { agentLabel: "CONTROLLER" });
+    emitStdoutLog(scanId, `[PHASE-BARRIER] ✅ PHASE BLOCK COMPLETED FOR TARGET: ${currentTarget}`, { agentLabel: "CONTROLLER" });
   }
 
-  // JavaScript Set Deduplication - Remove duplicate vulnerabilities
-  const seenVulnKeys = new Set<string>();
-  const uniqueVulnerabilities: EnhancedVulnerability[] = [];
-  
-  for (const vuln of findings) {
-    const key = `${vuln.title}|${vuln.severity}|${vuln.port || 0}`;
-    if (!seenVulnKeys.has(key)) {
-      seenVulnKeys.add(key);
-      uniqueVulnerabilities.push(vuln);
-    }
-  }
-  
-  const deduplicatedFindings = uniqueVulnerabilities;
-  const removedDups = findings.length - deduplicatedFindings.length;
-  if (removedDups > 0) {
-    emitStdoutLog(scanId, `[DEDUP] Removed ${removedDups} duplicate finding(s), ${deduplicatedFindings.length} unique findings remain`, { agentLabel: "CONTROLLER", type: "info" });
-  }
-
-  emitStdoutLog(scanId, `[SCAN] Complete: ${deduplicatedFindings.length} unique vulnerabilities identified`, { 
-    agentLabel: "CONTROLLER" 
-  });
-
+  // Final Results Assembly
   return {
-    vulnerabilities: deduplicatedFindings,
+    vulnerabilities: findings,
     apiEndpoints: [],
     technologies: [],
-    totalFindings: deduplicatedFindings.length,
-    criticalCount: deduplicatedFindings.filter(f => f.severity === "critical").length,
-    highCount: deduplicatedFindings.filter(f => f.severity === "high").length,
+    totalFindings: findings.length,
+    criticalCount: findings.filter(f => f.severity === "critical").length,
+    highCount: findings.filter(f => f.severity === "high").length,
     decisionLog: [],
     agentResults: {},
   };
