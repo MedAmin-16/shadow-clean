@@ -135,7 +135,6 @@ async function executeAgent(
     }, 10000);
     
     child.on("error", (err: any) => {
-      clearTimeout(timeout);
       logError(agentLabel, `Process error - ${err.message} (Code: ${err.code})`);
       emitStdoutLog(scanId, `[ERROR] [${agentLabel}] Process error - ${err.code || 'UNKNOWN'}: ${err.message}`, { agentLabel, type: "error" });
       resolve("");
