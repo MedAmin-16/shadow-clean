@@ -31,7 +31,7 @@ export function killScanProcess(scanId: string) {
  */
 function cleanupHangingProcesses() {
   try {
-    const tools = ["nuclei", "katana", "dalfox", "assetfinder", "httpx", "gau", "sqlmap", "commix"];
+    const tools = ["nuclei", "katana", "dalfox", "assetfinder", "httpx", "gau", "sqlmap", "commix", "ffuf", "arjun"];
     tools.forEach(tool => {
       try {
         execSync(`pkill -9 ${tool}`, { stdio: "ignore" });
@@ -459,7 +459,7 @@ async function phase2Discovery(scanData: ScanData): Promise<void> {
   // Feed Arjun results back into scanData.urls if found
   if (existsSync(arjunResults)) {
     try {
-      const content = JSON.parse(require('fs').readFileSync(arjunResults, 'utf8'));
+      const content = JSON.parse(readFileSync(arjunResults, 'utf8'));
       // Logic to merge discovered parameters into URL list
       emitStdoutLog(scanData.scanId, `[SYSTEM] Arjun discovered parameters for ${Object.keys(content).length} URLs`, { agentLabel: "ARJUN", type: "success" });
     } catch (e) {}
@@ -586,7 +586,7 @@ function logToProFile(scanId: string, message: string) {
     const logPath = "/home/runner/workspace/pro_results/vulnerabilities.log";
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] [Scan:${scanId}] ${message}\n`;
-    require('fs').appendFileSync(logPath, logEntry);
+    appendFileSync(logPath, logEntry);
 }
 
 export async function runSequentialScan(scanId: string, target: string) {
