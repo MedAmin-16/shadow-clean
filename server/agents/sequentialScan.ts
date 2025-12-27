@@ -168,9 +168,14 @@ function executeCommand(
 
     emitExecLog(scanId, `[${phaseName}] $ ${command} ${args.join(" ")}`);
 
-    // Use stdbuf for real-time output
-    const spawnCmd = "stdbuf";
-    const spawnArgs = ["-oL", "-eL", command, ...args];
+    // Skip stdbuf for dalfox (GLIBC compatibility issue), use direct spawn
+    let spawnCmd = command;
+    let spawnArgs = args;
+    
+    if (!command.includes("dalfox")) {
+      spawnCmd = "stdbuf";
+      spawnArgs = ["-oL", "-eL", command, ...args];
+    }
 
     const child = spawn(spawnCmd, spawnArgs, { 
       shell: true,
@@ -432,7 +437,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     const subdomainsFile = `${tmpdir()}/subdomains-nuclei-${scanData.scanId}.txt`;
     writeFileSync(subdomainsFile, scanData.subdomains.map(sub => sub.startsWith("http") ? sub : `https://${sub}`).join("\n"));
 
-    // HARDCODED TURBO FLAGS - USER SPECIFIED EXACT SEQUENCE + SILENT MODE
+    // HARDCODED TURBO FLAGS - USER SPECIFIED EXACT SEQUENCE (SILENT ONLY, NO -v)
     const nucleiArgs = [
       "-u", scanData.target,
       "-c", "100",
@@ -442,7 +447,6 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       "-ni",
       "-stats",
       "-stats-interval", "10",
-      "-v",
       "-silent"
     ];
     
@@ -488,7 +492,63 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
       "DALFOX-GLOBAL"
     );
     try { unlinkSync(urlsFile); } catch {}
+  } else {
+    emitStdoutLog(scanData.scanId, "[WARNING] No URLs collected for XSS testing, skipping PHASE-4", { agentLabel: "PHASE-4", type: "warning" });
   }
+}
+
+/**
+ * PHASE 5: SQL Injection Testing
+ */
+async function phase5SqlInjectionTesting(scanData: ScanData): Promise<void> {
+  const bannerText = createBanner("PHASE-5: SQL INJECTION ANALYSIS");
+  logPhaseInfo("PHASE-5", "Starting SQL injection testing...", icons.injection);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-5" });
+  await updateScanProgress(scanData.scanId, 90, "sqlmap");
+
+  if (scanData.urls.length === 0) {
+    emitStdoutLog(scanData.scanId, "[WARNING] No URLs collected for SQLMap, skipping PHASE-5", { agentLabel: "PHASE-5", type: "warning" });
+    return;
+  }
+
+  const urlsFile = `${tmpdir()}/sqlmap-urls-${scanData.scanId}.txt`;
+  writeFileSync(urlsFile, scanData.urls.join("\n"));
+  
+  logToolExecution("PHASE-5", "sqlmap", ["--batch", "--flush-session", "-l", urlsFile, "--threads=5", "--timeout=5"]);
+  await executeCommandWithStreaming(
+    scanData.scanId,
+    "sqlmap",
+    ["--batch", "--flush-session", "-l", urlsFile, "--threads=5", "--timeout=5"],
+    "SQLMAP-GLOBAL"
+  );
+  try { unlinkSync(urlsFile); } catch {}
+}
+
+/**
+ * PHASE 6: Command Injection Testing
+ */
+async function phase6CommandInjectionTesting(scanData: ScanData): Promise<void> {
+  const bannerText = createBanner("PHASE-6: COMMAND INJECTION ANALYSIS");
+  logPhaseInfo("PHASE-6", "Starting command injection testing...", icons.injection);
+  emitStdoutLog(scanData.scanId, bannerText, { agentLabel: "PHASE-6" });
+  await updateScanProgress(scanData.scanId, 95, "commix");
+
+  if (scanData.urls.length === 0) {
+    emitStdoutLog(scanData.scanId, "[WARNING] No URLs collected for Commix, skipping PHASE-6", { agentLabel: "PHASE-6", type: "warning" });
+    return;
+  }
+
+  const urlsFile = `${tmpdir()}/commix-urls-${scanData.scanId}.txt`;
+  writeFileSync(urlsFile, scanData.urls.join("\n"));
+  
+  logToolExecution("PHASE-6", "commix", ["-l", urlsFile, "--batch"]);
+  await executeCommandWithStreaming(
+    scanData.scanId,
+    "python3",
+    ["-m", "commix", "-l", urlsFile, "--batch"],
+    "COMMIX-GLOBAL"
+  );
+  try { unlinkSync(urlsFile); } catch {}
 }
 
 export async function runSequentialScan(scanId: string, target: string) {
@@ -509,6 +569,8 @@ export async function runSequentialScan(scanId: string, target: string) {
     await phase2GlobalUrlCrawling(scanData);
     await phase3GlobalVulnScanning(scanData);
     await phase4GlobalXssTesting(scanData);
+    await phase5SqlInjectionTesting(scanData);
+    await phase6CommandInjectionTesting(scanData);
 
     await db.update(scans).set({ status: "complete", progress: 100, completedAt: new Date() }).where(eq(scans.id, scanId));
     emitStdoutLog(scanId, "[\u2713] SCAN ARCHIVE FINALIZED", { agentLabel: "SYSTEM", type: "success" });
