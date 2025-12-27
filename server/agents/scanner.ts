@@ -394,7 +394,7 @@ export const AGENT_SWARM = {
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
   "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 3 -ps -system-chromium --headless-no-sandbox -it 0 -silent -u" },
   "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -timeout 4 -c 50 -rl 150 -bs 25 -v -stats -u" },
-  "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -timeout 4 -rate-limit 150 -u" },
+  "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -timeout 3 -rate-limit 150 --worker 50 --skip-bypassing -u" },
   "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 -m commix -u" },
   "AGENT-07": { name: "Parameter Discovery", tool: "arjun", command: "python3 -m arjun -u" },
   "AGENT-08": { name: "Database Exploitation", tool: "sqlmap", command: "sqlmap --batch --flush-session --random-agent --level=3 --risk=2 --timeout=4 --threads=50 -u" },

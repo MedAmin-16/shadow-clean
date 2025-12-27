@@ -484,11 +484,13 @@ async function phase4GlobalXssTesting(scanData: ScanData): Promise<void> {
     const urlsFile = `${tmpdir()}/xss-urls-${scanData.scanId}.txt`;
     writeFileSync(urlsFile, scanData.urls.join("\n"));
     
-    logToolExecution("PHASE-4", "dalfox", ["file", urlsFile, "--mass"]);
+    // OPTIMIZED DALFOX: --worker 50, --timeout 3, --skip-bypassing
+    const dalfoxArgs = ["file", urlsFile, "--mass", "--silence-force", "--worker", "50", "--timeout", "3", "--skip-bypassing"];
+    logToolExecution("PHASE-4", "dalfox", dalfoxArgs);
     await executeCommandWithStreaming(
       scanData.scanId,
       "/home/runner/workspace/bin/dalfox",
-      ["file", urlsFile, "--mass", "--silence-force"],
+      dalfoxArgs,
       "DALFOX-GLOBAL"
     );
     try { unlinkSync(urlsFile); } catch {}
@@ -514,11 +516,11 @@ async function phase5SqlInjectionTesting(scanData: ScanData): Promise<void> {
   const urlsFile = `${tmpdir()}/sqlmap-urls-${scanData.scanId}.txt`;
   writeFileSync(urlsFile, scanData.urls.join("\n"));
   
-  logToolExecution("PHASE-5", "sqlmap", ["--batch", "--flush-session", "-l", urlsFile, "--threads=5", "--timeout=5"]);
+  logToolExecution("PHASE-5", "sqlmap", ["--batch", "--flush-session", "-l", urlsFile, "--threads=50", "--timeout=5"]);
   await executeCommandWithStreaming(
     scanData.scanId,
     "sqlmap",
-    ["--batch", "--flush-session", "-l", urlsFile, "--threads=5", "--timeout=5"],
+    ["--batch", "--flush-session", "-l", urlsFile, "--threads=50", "--timeout=5"],
     "SQLMAP-GLOBAL"
   );
   try { unlinkSync(urlsFile); } catch {}
@@ -568,8 +570,14 @@ export async function runSequentialScan(scanId: string, target: string) {
     await phase1SubdomainDiscovery(scanData);
     await phase2GlobalUrlCrawling(scanData);
     await phase3GlobalVulnScanning(scanData);
-    await phase4GlobalXssTesting(scanData);
-    await phase5SqlInjectionTesting(scanData);
+    
+    // Start XSS and SQLi in parallel for speed
+    emitStdoutLog(scanData.scanId, "[SYSTEM] ⚡ Parallel Execution: Launching Phase 4 (XSS) and Phase 5 (SQLi) simultaneously", { agentLabel: "SYSTEM", type: "info" });
+    await Promise.all([
+      phase4GlobalXssTesting(scanData),
+      phase5SqlInjectionTesting(scanData)
+    ]);
+    
     await phase6CommandInjectionTesting(scanData);
 
     await db.update(scans).set({ status: "complete", progress: 100, completedAt: new Date() }).where(eq(scans.id, scanId));
