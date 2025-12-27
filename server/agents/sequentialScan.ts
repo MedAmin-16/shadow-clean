@@ -397,7 +397,7 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
       executeCommand(
         scanData.scanId,
         "/home/runner/workspace/bin/katana",
-        ["-list", subdomainsFile, "-c", "3", "-d", "3", "-ps", "-jc", "-delay", "5", "-system-chromium", "--no-sandbox"],
+        ["-list", subdomainsFile, "-c", "3", "-d", "5", "-jc", "-delay", "5", "-system-chromium", "--no-sandbox", "-silent"],
         "KATANA"
       ).catch(() => ""),
       executeCommand(
