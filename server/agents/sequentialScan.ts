@@ -492,9 +492,29 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
   await updateScanProgress(scanData.scanId, 50, "nuclei");
 
   try {
+    const finalNucleiListFile = `${tmpdir()}/final_nuclei_list_${scanData.scanId}.txt`;
+    
+    // Maximize coverage: All Live Subdomains + All Discovered URLs
+    const consolidatedTargets = Array.from(new Set([
+      ...scanData.subdomains.map(sub => sub.startsWith("http") ? sub : `https://${sub}`),
+      ...scanData.urls
+    ])).filter(target => {
+      // Basic scope check to stay within main domain
+      try {
+        const targetHost = new URL(target).hostname;
+        const mainHost = new URL(scanData.target.startsWith("http") ? scanData.target : `https://${scanData.target}`).hostname;
+        return targetHost.endsWith(mainHost);
+      } catch (e) {
+        return true; // Fallback for edge cases
+      }
+    });
+
+    writeFileSync(finalNucleiListFile, consolidatedTargets.join("\n"));
+    emitStdoutLog(scanData.scanId, `[SYSTEM] 🎯 Aggregated ${consolidatedTargets.length} unique targets for Nuclei analysis.`, { agentLabel: "NUCLEI", type: "info" });
+
     const nucleiArgs = [
-      "-u", scanData.target,
-      "-c", "100",
+      "-list", finalNucleiListFile,
+      "-c", "25",
       "-rate-limit", "200",
       "-bs", "50",
       "-timeout", "3",
@@ -504,12 +524,20 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       "-silent"
     ];
     
+    // Add config if it exists
+    const proConfig = "/home/runner/workspace/bin/pro_config.yaml";
+    if (existsSync(proConfig)) {
+      nucleiArgs.push("-config", proConfig);
+    }
+    
     await executeCommandWithStreaming(
       scanData.scanId,
       "/home/runner/workspace/bin/nuclei",
       nucleiArgs,
       "NUCLEI-TURBO"
     );
+
+    try { unlinkSync(finalNucleiListFile); } catch {}
   } catch (error) {
     throw error;
   }
