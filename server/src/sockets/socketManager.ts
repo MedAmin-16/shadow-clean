@@ -316,7 +316,9 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
   const cleanMessage = stripAnsi(log.message);
   
   // LOG PUSH: Ensure logs are broadcasted to all scan subscribers
-  const fullLog = { ...log, scanId, message: cleanMessage };
+  const logWithMetadata = { ...log, scanId, message: cleanMessage };
+  
+  // Track vulnerability if message contains severity badge
   if (cleanMessage.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
     if (cleanMessage.includes("☢️ CRITICAL")) {
       trackVulnerability(scanId, "critical");
@@ -329,14 +331,14 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
     }
   }
 
-  const fullLog = { ...log, scanId, message: cleanMessage };
+  const finalLog = { ...log, scanId, message: cleanMessage };
   
   // Buffer the log (keep last 10 per scan)
   if (!logBuffer.has(scanId)) {
     logBuffer.set(scanId, []);
   }
   const buffer = logBuffer.get(scanId)!;
-  buffer.push(fullLog);
+  buffer.push(finalLog);
   if (buffer.length > 10) {
     buffer.shift(); // Remove oldest log
   }
@@ -348,14 +350,14 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
     if (scanRoom && eliteRoom) {
       for (const socketId of Array.from(scanRoom)) {
         if (eliteRoom.has(socketId)) {
-          io.to(socketId).emit("terminal:log", fullLog);
+          io.to(socketId).emit("terminal:log", finalLog);
         }
       }
     }
   } else {
     const socketsInRoom = scanRoom ? scanRoom.size : 0;
     console.log(`[SOCKET] Emitting terminal:log to scan:${scanId} - Room has ${socketsInRoom} sockets - Message: "${log.message.substring(0, 60)}..."`);
-    io.to(`scan:${scanId}`).emit("terminal:log", fullLog);
+    io.to(`scan:${scanId}`).emit("terminal:log", finalLog);
   }
 }
 
