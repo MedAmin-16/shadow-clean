@@ -1,5 +1,5 @@
 import { spawn, execSync } from "child_process";
-import { readFileSync, appendFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "fs";
+import fs, { readFileSync, appendFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join, dirname } from "path";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
