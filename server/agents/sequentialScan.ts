@@ -117,6 +117,54 @@ interface ScanData {
   vulnerabilities: any[];
   errors: string[];
   subdomainMetadata: Map<string, { urlCount: number; vulnerabilityCount: number }>;
+  filteredUrlCount?: number; // Track how many URLs were filtered out
+  priorityTargets?: string[]; // URLs with parameters and API endpoints
+}
+
+/**
+ * PRE-SCAN FILTER: Remove static files and low-value URLs
+ * Keep: URLs with parameters (?), API endpoints, SecretFinder JS files
+ */
+function filterStaticFiles(urls: string[]): { filtered: string[]; filteredOut: number; priorityTargets: string[] } {
+  const staticExtensions = [".jpg", ".jpeg", ".png", ".gif", ".css", ".woff", ".svg", ".pdf"];
+  const filtered: string[] = [];
+  const priorityTargets: string[] = [];
+  let filteredOut = 0;
+
+  urls.forEach(url => {
+    const lowerUrl = url.toLowerCase();
+    
+    // Keep URLs with parameters (?)
+    if (lowerUrl.includes("?")) {
+      filtered.push(url);
+      priorityTargets.push(url);
+      return;
+    }
+    
+    // Keep .js files for SecretFinder
+    if (lowerUrl.endsWith(".js")) {
+      filtered.push(url);
+      return;
+    }
+    
+    // Filter out static files
+    const hasStaticExt = staticExtensions.some(ext => lowerUrl.endsWith(ext));
+    if (hasStaticExt) {
+      filteredOut++;
+      return;
+    }
+    
+    // Keep everything else (potential API endpoints, HTML pages)
+    filtered.push(url);
+    
+    // Identify API endpoints (common patterns)
+    if (lowerUrl.includes("/api/") || lowerUrl.includes("/v1/") || lowerUrl.includes("/v2/") || 
+        lowerUrl.includes("/rest/") || lowerUrl.includes("/graphql")) {
+      priorityTargets.push(url);
+    }
+  });
+
+  return { filtered, filteredOut, priorityTargets };
 }
 
 /**
@@ -483,7 +531,7 @@ async function phase2Discovery(scanData: ScanData): Promise<void> {
 }
 
 /**
- * PHASE 3: Global Vuln Scanning
+ * PHASE 3: Global Vuln Scanning with Pre-Scan Filter
  */
 async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
   const bannerText = createBanner("PHASE-3: VULNERABILITY ANALYSIS");
@@ -492,8 +540,6 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
   await updateScanProgress(scanData.scanId, 50, "nuclei");
 
   try {
-    const finalNucleiListFile = `${tmpdir()}/final_nuclei_list_${scanData.scanId}.txt`;
-    
     // Maximize coverage: All Live Subdomains + All Discovered URLs
     const consolidatedTargets = Array.from(new Set([
       ...scanData.subdomains.map(sub => sub.startsWith("http") ? sub : `https://${sub}`),
@@ -509,17 +555,37 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       }
     });
 
-    writeFileSync(finalNucleiListFile, consolidatedTargets.join("\n"));
-    emitStdoutLog(scanData.scanId, `[SYSTEM] 🎯 Aggregated ${consolidatedTargets.length} unique targets for Nuclei analysis.`, { agentLabel: "NUCLEI", type: "info" });
+    // Apply Pre-Scan Filter to remove static files
+    const { filtered: filteredTargets, filteredOut, priorityTargets } = filterStaticFiles(consolidatedTargets);
+    
+    // Store stats for dashboard display
+    scanData.filteredUrlCount = filteredOut;
+    scanData.priorityTargets = priorityTargets;
 
+    emitStdoutLog(scanData.scanId, `[SYSTEM] 📊 Pre-Scan Filter: ${consolidatedTargets.length} URLs → ${filteredTargets.length} targets (${filteredOut} static files filtered out)`, { agentLabel: "NUCLEI", type: "success" });
+    
+    // Write main Nuclei list (filtered)
+    const finalNucleiListFile = `${tmpdir()}/final_nuclei_list_${scanData.scanId}.txt`;
+    writeFileSync(finalNucleiListFile, filteredTargets.join("\n"));
+
+    // Write priority targets list (URLs with parameters + API endpoints)
+    const priorityFile = `${tmpdir()}/priority_targets_${scanData.scanId}.txt`;
+    writeFileSync(priorityFile, priorityTargets.join("\n"));
+    
+    if (priorityTargets.length > 0) {
+      emitStdoutLog(scanData.scanId, `[SYSTEM] 🎯 Priority targets identified: ${priorityTargets.length} URLs with parameters/APIs for focused analysis`, { agentLabel: "NUCLEI", type: "info" });
+    }
+
+    // Optimized Nuclei arguments: CVE/exposure focus + faster execution
     const nucleiArgs = [
       "-list", finalNucleiListFile,
-      "-severity", "medium,high,critical",
+      "-tags", "cve,exposure,critical,high",  // Skip low-impact checks
       "-c", "25",
       "-rate-limit", "200",
       "-bs", "50",
       "-timeout", "3",
       "-ni",
+      "-no-interactsh",  // Skip OAST testing for speed
       "-stats",
       "-stats-interval", "10",
       "-silent"
@@ -539,6 +605,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     );
 
     try { unlinkSync(finalNucleiListFile); } catch {}
+    try { unlinkSync(priorityFile); } catch {}
   } catch (error) {
     throw error;
   }
