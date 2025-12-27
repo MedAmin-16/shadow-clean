@@ -432,7 +432,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
     const subdomainsFile = `${tmpdir()}/subdomains-nuclei-${scanData.scanId}.txt`;
     writeFileSync(subdomainsFile, scanData.subdomains.map(sub => sub.startsWith("http") ? sub : `https://${sub}`).join("\n"));
 
-    // HARDCODED TURBO FLAGS - USER SPECIFIED EXACT SEQUENCE
+    // HARDCODED TURBO FLAGS - USER SPECIFIED EXACT SEQUENCE + SILENT MODE
     const nucleiArgs = [
       "-u", scanData.target,
       "-c", "100",
@@ -442,7 +442,8 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
       "-ni",
       "-stats",
       "-stats-interval", "10",
-      "-v"
+      "-v",
+      "-silent"
     ];
     
     const nucleiCmdDebug = `/home/runner/workspace/bin/nuclei ${nucleiArgs.join(" ")}`;
