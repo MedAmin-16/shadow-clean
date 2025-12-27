@@ -236,7 +236,7 @@ function executeCommand(
       clearInterval(silenceCheck);
       activeProcesses.delete(scanId);
       if (code !== 0 && code !== null) {
-        emitStdoutLog(scanId, `[${phaseName}] ⚠️ Command exited with code ${code}`, { agentLabel: phaseName, type: "warning" });
+        emitStdoutLog(scanId, `[${phaseName}] ⚠️ Command exited with code ${code}. Continuing to next phase...`, { agentLabel: phaseName, type: "warning" });
       }
       resolve(output.join("\n"));
     });
@@ -397,7 +397,7 @@ async function phase2GlobalUrlCrawling(scanData: ScanData): Promise<void> {
       executeCommand(
         scanData.scanId,
         "/home/runner/workspace/bin/katana",
-        ["-list", subdomainsFile, "-c", "3", "-d", "5", "-jc", "-delay", "5", "-system-chromium", "--no-sandbox", "-silent"],
+        ["-u", scanData.target, "-d", "5", "-jc", "-kf", "all", "-silent", "-nc"],
         "KATANA"
       ).catch(() => ""),
       executeCommand(
