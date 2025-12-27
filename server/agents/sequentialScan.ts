@@ -1,7 +1,7 @@
 import { spawn, execSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, appendFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
 import { emitStdoutLog, emitExecLog, emitErrorLog } from "../src/sockets/socketManager";
 
 import { db } from "../db";
@@ -92,6 +92,7 @@ async function captureScreenshot(scanId: string, url: string, vulnerabilityId: s
     return null;
   }
 }
+
 import {
   createBanner,
   logPhaseInfo,
@@ -584,6 +585,10 @@ async function phase6CommandInjectionTesting(scanData: ScanData): Promise<void> 
 
 function logToProFile(scanId: string, message: string) {
     const logPath = "/home/runner/workspace/pro_results/vulnerabilities.log";
+    const logDir = dirname(logPath);
+    if (!existsSync(logDir)) {
+        mkdirSync(logDir, { recursive: true });
+    }
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] [Scan:${scanId}] ${message}\n`;
     appendFileSync(logPath, logEntry);
