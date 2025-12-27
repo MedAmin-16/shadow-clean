@@ -514,6 +514,7 @@ async function phase3GlobalVulnScanning(scanData: ScanData): Promise<void> {
 
     const nucleiArgs = [
       "-list", finalNucleiListFile,
+      "-severity", "medium,high,critical",
       "-c", "25",
       "-rate-limit", "200",
       "-bs", "50",

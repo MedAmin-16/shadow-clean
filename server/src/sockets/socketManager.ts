@@ -315,21 +315,25 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
   // Strip ANSI codes before sending to frontend
   const cleanMessage = stripAnsi(log.message);
   
-  // LOG PUSH: Ensure logs are broadcasted to all scan subscribers
-  const logWithMetadata = { ...log, scanId, message: cleanMessage };
-  
   // Track vulnerability if message contains severity badge
   if (cleanMessage.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
     if (cleanMessage.includes("☢️ CRITICAL")) {
       trackVulnerability(scanId, "critical");
+      logToProFile(scanId, `[CRITICAL] ${cleanMessage}`);
     } else if (cleanMessage.includes("🔥 HIGH")) {
       trackVulnerability(scanId, "high");
+      logToProFile(scanId, `[HIGH] ${cleanMessage}`);
     } else if (cleanMessage.includes("🟡 MEDIUM")) {
       trackVulnerability(scanId, "medium");
+      logToProFile(scanId, `[MEDIUM] ${cleanMessage}`);
     } else if (cleanMessage.includes("🛡️ LOW")) {
       trackVulnerability(scanId, "low");
+      logToProFile(scanId, `[LOW] ${cleanMessage}`);
     }
   }
+
+  // LOG PUSH: Ensure logs are broadcasted to all scan subscribers
+  const logWithMetadata = { ...log, scanId, message: cleanMessage };
 
   const finalLog = { ...log, scanId, message: cleanMessage };
   
