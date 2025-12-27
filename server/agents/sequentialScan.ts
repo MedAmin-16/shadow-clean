@@ -513,14 +513,24 @@ async function phase5SqlInjectionTesting(scanData: ScanData): Promise<void> {
     return;
   }
 
-  const urlsFile = `${tmpdir()}/sqlmap-urls-${scanData.scanId}.txt`;
-  writeFileSync(urlsFile, scanData.urls.join("\n"));
+  // Filter URLs with parameters (containing ?)
+  const parameterizedUrls = scanData.urls.filter(url => url.includes("?"));
   
-  logToolExecution("PHASE-5", "sqlmap", ["--batch", "--flush-session", "-l", urlsFile, "--threads=50", "--timeout=5"]);
+  if (parameterizedUrls.length === 0) {
+    emitStdoutLog(scanData.scanId, "[INFO] No parameterized URLs found. SQLMap requires parameters to test.", { agentLabel: "PHASE-5", type: "info" });
+    return;
+  }
+
+  const urlsFile = `${tmpdir()}/sqlmap-urls-${scanData.scanId}.txt`;
+  writeFileSync(urlsFile, parameterizedUrls.join("\n"));
+  
+  // Use -m flag instead of -l to avoid STDIN issues with multiple URLs
+  const sqlmapArgs = ["--batch", "--flush-session", "--random-agent", "--level", "3", "--risk", "2", "-m", urlsFile, "--threads=10", "--timeout=5"];
+  logToolExecution("PHASE-5", "sqlmap", sqlmapArgs);
   await executeCommandWithStreaming(
     scanData.scanId,
     "sqlmap",
-    ["--batch", "--flush-session", "-l", urlsFile, "--threads=50", "--timeout=5"],
+    sqlmapArgs,
     "SQLMAP-GLOBAL"
   );
   try { unlinkSync(urlsFile); } catch {}
@@ -543,11 +553,24 @@ async function phase6CommandInjectionTesting(scanData: ScanData): Promise<void> 
   const urlsFile = `${tmpdir()}/commix-urls-${scanData.scanId}.txt`;
   writeFileSync(urlsFile, scanData.urls.join("\n"));
   
-  logToolExecution("PHASE-6", "commix", ["-l", urlsFile, "--batch"]);
+  // Check if commix is available as a command or script
+  let commixCmd = "commix";
+  let commixArgs = ["-l", urlsFile, "--batch"];
+  
+  try {
+    // Try to locate commix.py if binary fails
+    const commixPath = "/home/runner/workspace/commix/commix.py";
+    if (existsSync(commixPath)) {
+      commixCmd = "python3";
+      commixArgs = [commixPath, "-l", urlsFile, "--batch"];
+    }
+  } catch (e) {}
+
+  logToolExecution("PHASE-6", commixCmd, commixArgs);
   await executeCommandWithStreaming(
     scanData.scanId,
-    "python3",
-    ["-m", "commix", "-l", urlsFile, "--batch"],
+    commixCmd,
+    commixArgs,
     "COMMIX-GLOBAL"
   );
   try { unlinkSync(urlsFile); } catch {}
