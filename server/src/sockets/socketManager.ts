@@ -314,8 +314,9 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
 
   // Strip ANSI codes before sending to frontend
   const cleanMessage = stripAnsi(log.message);
-
-  // Track vulnerability if message contains severity badge
+  
+  // LOG PUSH: Ensure logs are broadcasted to all scan subscribers
+  const fullLog = { ...log, scanId, message: cleanMessage };
   if (cleanMessage.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
     if (cleanMessage.includes("☢️ CRITICAL")) {
       trackVulnerability(scanId, "critical");

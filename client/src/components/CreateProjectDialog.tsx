@@ -38,6 +38,8 @@ export function CreateProjectDialog({ open, onOpenChange, onSubmit }: CreateProj
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // OPTIMISTIC UI: Immediately invalidate queries or show running state if possible
+    // But since the mutation is handled by the parent, we'll let it handle the optimistic update
     onSubmit?.({ name, description, targetUrl, assetType });
     setName("");
     setDescription("");

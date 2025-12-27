@@ -596,6 +596,11 @@ function logToProFile(scanId: string, message: string) {
 
 export async function runSequentialScan(scanId: string, target: string) {
   cleanupHangingProcesses();
+  
+  // IMMEDIATELY broadcast scan started status
+  const { emitToScan, emitTerminalLog } = await import("../src/sockets/socketManager");
+  emitToScan(scanId, "scan:status", { scanId, status: "running" });
+  
   logToProFile(scanId, `STARTING PRO PACK SCAN ON ${target}`);
   
   const scanData: ScanData = {

@@ -96,6 +96,10 @@ export default function DashboardPage() {
 
   const { data: scans = [] } = useQuery<Scan[]>({
     queryKey: ["/api/scans"],
+    refetchInterval: (query) => {
+      const scans = query.state.data as Scan[] | undefined;
+      return scans?.some(s => s.status === "running" || s.status === "pending") ? 3000 : false;
+    }
   });
 
   const { data: activities = [] } = useQuery<Activity[]>({
