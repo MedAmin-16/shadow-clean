@@ -20,6 +20,7 @@ import { ProphetAISection } from "@/components/ProphetAISection";
 import { PlanBadge } from "@/components/PlanBadge";
 import { UpgradeRequired } from "@/components/UpgradeRequired";
 import { VulnerabilityDetailsModal } from "@/components/VulnerabilityDetailsModal";
+import { AttackChainsCard } from "@/components/AttackChainsCard";
 
 interface DashboardMetrics {
   securityScore: number;
@@ -47,6 +48,17 @@ interface Vulnerability {
   tool?: string;
   wafShielded?: boolean;
   wafRuleId?: string;
+}
+
+interface AttackChain {
+  id: string;
+  name: string;
+  severity: "critical" | "high" | "medium";
+  vulnerabilities: string[];
+  description: string;
+  impact: string;
+  reasoning: string;
+  exploitPath: string;
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -114,6 +126,15 @@ export default function DashboardPage() {
 
   const { data: vulnerabilities = [] } = useQuery<Vulnerability[]>({
     queryKey: ["/api/dashboard/vulnerabilities"],
+  });
+
+  const completedScan = useMemo(() => {
+    return scans.find(s => s.status === "complete");
+  }, [scans]);
+
+  const { data: attackChains = [] } = useQuery<AttackChain[]>({
+    queryKey: ["/api/attack-chains", completedScan?.id],
+    enabled: !!completedScan?.id && (user?.planLevel === "PRO" || user?.planLevel === "ELITE"),
   });
 
   const activeScan = useMemo(() => {
@@ -253,6 +274,13 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* AI Attack Chains (PRO and ELITE only) */}
+      {(user?.planLevel === "PRO" || user?.planLevel === "ELITE") && completedScan && (
+        <div className="space-y-4">
+          <AttackChainsCard chains={attackChains} isLoading={false} />
+        </div>
+      )}
 
       {/* Vulnerability Findings Grid */}
       <div className="space-y-4">

@@ -52,6 +52,10 @@ import {
   getProviderMisconfigurations,
 } from "./src/controllers/cspmController";
 import {
+  getAttackChains,
+  correlateVulnerabilities,
+} from "./src/controllers/attackChainerController";
+import {
   adminLogin,
   verifyAdmin,
   adminLogout,
@@ -292,6 +296,10 @@ export async function registerRoutes(
 
   // Visual Attack Path (PRO and ELITE)
   app.get("/api/attack-path/:scanId", requireFeature("visual_attack_path"), generateAttackPath);
+
+  // AI Attack Chainer (PRO and ELITE)
+  app.get("/api/attack-chains/:scanId", requireFeature("visual_attack_path"), getAttackChains);
+  app.post("/api/attack-chains/correlate", requireFeature("visual_attack_path"), correlateVulnerabilities);
 
   // Continuous Monitoring (PRO: weekly, ELITE: daily)
   app.post("/api/monitoring/schedules", requireFeature("weekly_monitoring"), createMonitoringSchedule);
