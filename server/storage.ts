@@ -44,6 +44,14 @@ export interface IStorage {
   getPendingApprovalRequests(userId: string): Promise<any[]>;
   updateApprovalRequest(id: string, updates: Partial<any>): Promise<any | undefined>;
   
+  // Integration methods
+  saveIntegration(userId: string, integrationId: string, credentials: Record<string, string>): Promise<void>;
+  getIntegration(userId: string, integrationId: string): Promise<any | undefined>;
+  getIntegrations(userId: string): Promise<any[]>;
+  deleteIntegration(userId: string, integrationId: string): Promise<void>;
+  testIntegration(integrationId: string, config: any): Promise<boolean>;
+  updateIntegrationStatus(userId: string, integrationId: string, connected: boolean): Promise<void>;
+  
   // ShadowLogic database methods
   insertVulnerability(data: { scanId: string; userId: string; type: string; severity: string; title: string; description: string; url: string; payload?: string; remediation?: string }): Promise<void>;
   insertDiscovery(data: { scanId: string; userId: string; discoveryType: string; url: string; title?: string; method?: string; parameters?: Record<string, unknown> }): Promise<void>;
@@ -58,6 +66,7 @@ export class MemStorage implements IStorage {
   private settings: Map<string, UserSettings>;
   private credits: Map<string, UserCredits>;
   private approvalRequests: Map<string, any>;
+  private integrations: Map<string, any[]>;
 
   constructor() {
     this.users = new Map();
@@ -68,6 +77,7 @@ export class MemStorage implements IStorage {
     this.settings = new Map();
     this.credits = new Map();
     this.approvalRequests = new Map();
+    this.integrations = new Map();
     
     this.initializeSampleData();
   }
@@ -514,6 +524,49 @@ export class MemStorage implements IStorage {
       console.log(`[DB] Discovery inserted: ${data.discoveryType} - ${data.url}`);
     } catch (error) {
       console.error("[DB] Failed to insert discovery:", error);
+    }
+  }
+
+  async saveIntegration(userId: string, integrationId: string, credentials: Record<string, string>): Promise<void> {
+    if (!this.integrations.has(userId)) {
+      this.integrations.set(userId, []);
+    }
+    const userIntegrations = this.integrations.get(userId) || [];
+    const existing = userIntegrations.findIndex(i => i.id === integrationId);
+    if (existing >= 0) {
+      userIntegrations[existing] = { id: integrationId, config: credentials, connected: false, lastTested: null };
+    } else {
+      userIntegrations.push({ id: integrationId, config: credentials, connected: false, lastTested: null });
+    }
+    this.integrations.set(userId, userIntegrations);
+  }
+
+  async getIntegration(userId: string, integrationId: string): Promise<any | undefined> {
+    const userIntegrations = this.integrations.get(userId) || [];
+    return userIntegrations.find(i => i.id === integrationId);
+  }
+
+  async getIntegrations(userId: string): Promise<any[]> {
+    return this.integrations.get(userId) || [];
+  }
+
+  async deleteIntegration(userId: string, integrationId: string): Promise<void> {
+    const userIntegrations = this.integrations.get(userId) || [];
+    const filtered = userIntegrations.filter(i => i.id !== integrationId);
+    this.integrations.set(userId, filtered);
+  }
+
+  async testIntegration(integrationId: string, config: any): Promise<boolean> {
+    // Simple test - in production would call actual API
+    return !!(config && (config.apiKey || config.accessKeyId));
+  }
+
+  async updateIntegrationStatus(userId: string, integrationId: string, connected: boolean): Promise<void> {
+    const userIntegrations = this.integrations.get(userId) || [];
+    const integration = userIntegrations.find(i => i.id === integrationId);
+    if (integration) {
+      integration.connected = connected;
+      integration.lastTested = new Date().toISOString();
     }
   }
 }

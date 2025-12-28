@@ -3,6 +3,8 @@ import type { Server } from "http";
 import { scanRateLimiter } from "./src/middlewares/rateLimiter";
 import { apiKeyAuth } from "./src/middlewares/apiKeyAuth";
 import { sessionAuth, optionalSessionAuth } from "./src/middlewares/sessionAuth";
+import { storage } from "./storage";
+import { creditService } from "./src/services/creditService";
 import {
   startScan,
   getScanStatus,
@@ -190,23 +192,85 @@ export async function registerRoutes(
   
   // WAF Integration Routes (ELITE only)
   app.post("/api/integrations/save", requireFeature("waf_automation"), async (req, res) => {
-    // Implementation would go here
-    res.json({ success: true });
+    try {
+      const { integrationId, credentials } = req.body;
+      const userId = (req as any).userId;
+      
+      if (!integrationId || !credentials) {
+        return res.status(400).json({ error: "Missing integration ID or credentials" });
+      }
+      
+      // Save integration credentials to storage
+      await storage.saveIntegration(userId, integrationId, credentials);
+      
+      res.json({ success: true, message: "Integration saved successfully" });
+    } catch (error) {
+      console.error("Error saving integration:", error);
+      res.status(500).json({ error: "Failed to save integration" });
+    }
   });
+
   app.post("/api/integrations/test", requireFeature("waf_automation"), async (req, res) => {
-    // Implementation would go here
-    res.json({ success: true });
+    try {
+      const { integrationId } = req.body;
+      const userId = (req as any).userId;
+      
+      if (!integrationId) {
+        return res.status(400).json({ error: "Missing integration ID" });
+      }
+      
+      // Get integration credentials from storage
+      const integration = await storage.getIntegration(userId, integrationId);
+      if (!integration) {
+        return res.status(404).json({ error: "Integration not found" });
+      }
+      
+      // Test the integration connection
+      const isConnected = await storage.testIntegration(integrationId, integration.config);
+      
+      if (isConnected) {
+        await storage.updateIntegrationStatus(userId, integrationId, true);
+        res.json({ success: true, message: "Connection successful!" });
+      } else {
+        res.json({ success: false, error: "Connection failed. Please verify your credentials." });
+      }
+    } catch (error) {
+      console.error("Error testing integration:", error);
+      res.status(500).json({ error: "Failed to test integration" });
+    }
   });
+
   app.delete("/api/integrations/:id", requireFeature("waf_automation"), async (req, res) => {
-    // Implementation would go here
-    res.json({ success: true });
+    try {
+      const { id } = req.params;
+      const userId = (req as any).userId;
+      
+      await storage.deleteIntegration(userId, id);
+      
+      res.json({ success: true, message: "Integration removed successfully" });
+    } catch (error) {
+      console.error("Error deleting integration:", error);
+      res.status(500).json({ error: "Failed to remove integration" });
+    }
   });
+
   app.get("/api/integrations", sessionAuth, async (req, res) => {
-    // Mock data for demo
-    res.json({
-      planLevel: (req.user as any)?.planLevel || "STANDARD",
-      integrations: []
-    });
+    try {
+      const session = (req as any).session;
+      const userId = session?.userId || "user-1";
+      
+      // Get user's plan level from credits
+      const credits = await creditService.getUserCredits(userId);
+      const integrations = await storage.getIntegrations(userId);
+      
+      res.json({
+        planLevel: credits.planLevel,
+        integrations: integrations || []
+      });
+    } catch (error) {
+      console.error("Error fetching integrations:", error);
+      res.status(500).json({ error: "Failed to fetch integrations" });
+    }
   });
 
   // Threat Intelligence (ELITE only)

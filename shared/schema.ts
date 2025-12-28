@@ -539,7 +539,6 @@ export const PLAN_FEATURE_CONFIGS: Record<PlanLevel, PlanFeatureConfig> = {
       "rl_exploiter",
       "autonomous_defense",
       "shadow_logic",
-      "waf_automation",
     ],
     monitoringFrequency: "daily",
     maxScansPerMonth: -1,
