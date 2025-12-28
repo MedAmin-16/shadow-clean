@@ -549,20 +549,47 @@ export async function runScannerAgent(
       emitStdoutLog(scanId, `[ERROR] SQLMap scanning failed: ${sqlmapError instanceof Error ? sqlmapError.message : "unknown error"}. Continuing to next tool...`, { agentLabel: "SCANNER" });
     }
 
-    // RUN FFUZ FOR SENSITIVE ENDPOINTS
-    emitStdoutLog(scanId, `[RUNNING] ffuf -w wordlists/common.txt -u ${target}/FUZZ -mc 200,301,302`, { agentLabel: "SCANNER" });
+    // RUN FFUZ FOR SENSITIVE ENDPOINTS & API DISCOVERY
+    emitStdoutLog(scanId, `[RUNNING] ffuf -w wordlists/common.txt,api_fuzz.txt -u ${target}/FUZZ -mc 200,301,302`, { agentLabel: "SCANNER" });
     try {
-      const ffufOutput = await executeAgent(scanId, "/home/runner/workspace/bin/ffuf", ["-w", "/home/runner/workspace/wordlists/common.txt", "-u", `${target}/FUZZ`, "-mc", "200,301,302", "-silent"], "AGENT-12");
+      // 1. Run main common fuzz
+      const ffufOutputCommon = await executeAgent(scanId, "/home/runner/workspace/bin/ffuf", ["-w", "/home/runner/workspace/wordlists/common.txt", "-u", `${target}/FUZZ`, "-mc", "200,301,302", "-silent"], "AGENT-12");
+      // 2. Run specialized API fuzz
+      const ffufOutputApi = await executeAgent(scanId, "/home/runner/workspace/bin/ffuf", ["-w", "/home/runner/workspace/wordlists/api_fuzz.txt", "-u", `${target}/FUZZ`, "-mc", "200,301,302", "-silent"], "AGENT-12");
+      
+      const ffufOutput = ffufOutputCommon + "\n" + ffufOutputApi;
       const sensitivePaths = ["/admin", "/.env", "/api/v1", "/config", "/.git", "/backup"];
+      const criticalApiPaths = ["/actuator", "/jolokia", "/hystrix", "/metrics", "/swagger-ui.html", "/swagger-resources", "/v2/api-docs", "/v3/api-docs", "/api/docs", "/redoc", "/swagger.json", "/openapi.json"];
+      
       const ffufLines = ffufOutput.split("\n");
+      const swaggerDocs = [];
       
       for (const line of ffufLines) {
         if (line.includes(" [Status: 200") || line.includes(" [Status: 301") || line.includes(" [Status: 302")) {
-          const parts = line.split(" ");
-          const pathPart = parts.find(p => p.startsWith("/") || (p.length > 1 && !p.includes("[")));
+          const parts = line.split(" ").filter(p => p.trim());
+          const pathPart = parts[0];
           if (pathPart) {
-            const isSensitive = sensitivePaths.some(p => pathPart.toLowerCase().includes(p));
-            if (isSensitive) {
+            const lowerPath = pathPart.toLowerCase();
+            
+            // Check for Critical API Exposure
+            if (criticalApiPaths.some(p => lowerPath.includes(p.toLowerCase())) && line.includes("[Status: 200")) {
+               const vuln: EnhancedVulnerability = {
+                id: `api-exposure-${Date.now()}-${Math.random()}`,
+                title: "[CRITICAL API EXPOSURE] Exposed Framework or Documentation Endpoint",
+                description: `Found critical API/Framework exposure: ${pathPart}. This may leak sensitive system information or provide an attack surface for internal APIs.`,
+                severity: "critical",
+                owaspCategory: "A01:2021-Broken Access Control",
+                port: 443,
+                service: "https",
+                remediationCode: "Immediately restrict access to these endpoints. For Spring Boot, disable or secure actuators. Remove or protect Swagger/API documentation in production."
+              };
+              findings.push(vuln);
+              emitStdoutLog(scanId, `🚨 [CRITICAL API EXPOSURE] Found: ${pathPart}`, { agentLabel: "SCANNER", type: "finding" });
+              
+              if (lowerPath.includes("swagger.json") || lowerPath.includes("api-docs") || lowerPath.includes("openapi.json")) {
+                swaggerDocs.push(`${target}${pathPart}`);
+              }
+            } else if (sensitivePaths.some(p => lowerPath.includes(p.toLowerCase()))) {
               const vuln: EnhancedVulnerability = {
                 id: `ffuf-sensitive-${Date.now()}-${Math.random()}`,
                 title: "[SENSITIVE ENDPOINT] Exposed Administrative or Config Path",
@@ -577,6 +604,17 @@ export async function runScannerAgent(
               emitStdoutLog(scanId, `🚨 [SENSITIVE ENDPOINT] Found: ${pathPart}`, { agentLabel: "SCANNER", type: "finding" });
             }
           }
+        }
+      }
+
+      // POST-DISCOVERY ACTION: Feed swagger docs into Nuclei
+      for (const docUrl of swaggerDocs) {
+        emitStdoutLog(scanId, `[ACTION] Automated API Testing: Feeding discovered doc into Nuclei: ${docUrl}`, { agentLabel: "SCANNER" });
+        try {
+          // Using swagger templates if they exist in the templates directory
+          await executeAgent(scanId, "/home/runner/workspace/bin/nuclei", ["-u", docUrl, "-t", "http/vulnerabilities/generic/swagger-api-test.yaml", "-ni", "-v"], "NUCLEI-API");
+        } catch (e) {
+          emitStdoutLog(scanId, `[DEBUG] Swagger Nuclei test failed for ${docUrl}: ${e instanceof Error ? e.message : "unknown error"}`, { agentLabel: "SCANNER" });
         }
       }
     } catch (ffufError) {
