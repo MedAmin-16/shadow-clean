@@ -8,6 +8,8 @@ interface Vulnerability {
   severity: "critical" | "high" | "medium" | "low" | "info";
   affectedAsset: string;
   cveId?: string;
+  wafShielded?: boolean;
+  wafRuleId?: string;
 }
 
 interface RecentVulnerabilitiesProps {

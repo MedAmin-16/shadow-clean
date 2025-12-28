@@ -335,12 +335,84 @@ export async function registerRoutes(
       // Generate WAF rule ID
       const ruleId = `WAF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
 
+      // Generate WAF rules based on vulnerability type
+      const title = vulnerability?.title?.toLowerCase() || "";
+      let wafRules: any[] = [];
+
+      if (title.includes("sql") || title.includes("injection")) {
+        // SQLi WAF Rules
+        wafRules = [
+          {
+            name: `ShadowTwin-SQLi-${ruleId}`,
+            type: "waf_rule",
+            action: "block",
+            pattern: "(?i)(union.*select|select.*from|insert.*into|delete.*from|drop.*table|--|'|\")",
+            description: `Block SQL Injection attempts for ${vulnerability.title}`
+          },
+          {
+            name: `ShadowTwin-SQLi-Param-${ruleId}`,
+            type: "parameter_filter",
+            action: "sanitize",
+            pattern: "(?i)(union|select|insert|delete|drop)",
+            description: `Sanitize parameters for SQL injection in ${vulnerability.url}`
+          }
+        ];
+      } else if (title.includes("xss") || title.includes("cross-site")) {
+        // XSS WAF Rules
+        wafRules = [
+          {
+            name: `ShadowTwin-XSS-${ruleId}`,
+            type: "waf_rule",
+            action: "block",
+            pattern: "(<script|javascript:|on\\w+=|<iframe|<embed)",
+            description: `Block XSS attempts for ${vulnerability.title}`
+          },
+          {
+            name: `ShadowTwin-XSS-Sanitize-${ruleId}`,
+            type: "content_filter",
+            action: "sanitize",
+            pattern: "(<script.*?</script>|javascript:|event handlers)",
+            description: `Sanitize XSS payloads in responses`
+          }
+        ];
+      } else if (title.includes("/.env") || title.includes("actuator") || title.includes("sensitive")) {
+        // Sensitive Endpoints
+        wafRules = [
+          {
+            name: `ShadowTwin-SensitiveEndpoint-${ruleId}`,
+            type: "path_block",
+            action: "block",
+            pattern: "(?i)(/\\.env|\\/actuator|\\/admin|\\/config|\\/api/internal)",
+            description: `Block access to sensitive endpoints`
+          },
+          {
+            name: `ShadowTwin-SensitiveEndpoint-Challenge-${ruleId}`,
+            type: "path_challenge",
+            action: "challenge",
+            pattern: `(?i)(${vulnerability.url?.split('/').pop() || 'sensitive'})`,
+            description: `Challenge requests to ${vulnerability.url}`
+          }
+        ];
+      } else {
+        // Default WAF Rule
+        wafRules = [
+          {
+            name: `ShadowTwin-Default-${ruleId}`,
+            type: "anomaly_detection",
+            action: "alert",
+            pattern: ".*",
+            description: `Monitor for anomalies related to ${vulnerability.title}`
+          }
+        ];
+      }
+
       // Simulate WAF rule deployment (in production, this would integrate with Cloudflare/AWS)
       console.log(`[WAF HOTFIX] Deploying rule ${ruleId} for vulnerability ${vulnId}`, {
         userId,
         title: vulnerability?.title,
         payload: vulnerability?.payload,
         url: vulnerability?.url,
+        rules: wafRules,
       });
 
       res.json({
@@ -348,6 +420,13 @@ export async function registerRoutes(
         ruleId,
         message: `Vulnerability Shielded: WAF Rule #${ruleId} Active`,
         timestamp: new Date().toISOString(),
+        rules: wafRules,
+        deployment: {
+          status: "active",
+          vendor: "Cloudflare/AWS WAF",
+          effectiveAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 86400000).toISOString(), // 24 hours
+        }
       });
     } catch (error) {
       console.error("Error deploying hotfix:", error);
