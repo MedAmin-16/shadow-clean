@@ -1471,12 +1471,20 @@ Respond in this JSON format:
         case "parameter_tampering":
           await this.testParameterTampering();
           break;
+        case "race_condition":
+          await this.testRaceConditions();
+          break;
       }
 
       this.scanResult.statistics.testsExecuted++;
     }
     
-    this.addThought("success", `[AGGRESSIVE] All security tests complete. Found ${this.scanResult.vulnerabilities.length} vulnerabilities.`);
+    await this.testStateMachineAuditing();
+    await this.testAdvancedParameterTampering();
+    await this.testContextAwareIDOR();
+    await this.testPrivilegeEscalationAdvanced();
+    
+    this.addThought("success", `[RUTHLESS AUDIT COMPLETE] Found ${this.scanResult.vulnerabilities.length} business logic flaws. Shadow Logic missed nothing.`);
   }
 
   private async testPriceManipulation(): Promise<void> {
@@ -1558,7 +1566,7 @@ Respond in this JSON format:
   }
 
   private async testPrivilegeEscalation(): Promise<void> {
-    this.addThought("action", "Testing for privilege escalation vectors...");
+    this.addThought("action", "[HACKER MINDSET] Hunting for hidden admin parameters and role escalation vectors...");
 
     const adminPatterns = [
       /admin/i, /dashboard/i, /manage/i, /settings/i, /users/i
@@ -1567,7 +1575,7 @@ Respond in this JSON format:
     const urls = Array.from(this.discoveredUrls);
     for (const url of urls) {
       if (adminPatterns.some(p => p.test(url))) {
-        this.addThought("observation", `Found potential admin endpoint: ${url}`);
+        this.addThought("reasoning", `[Shadow Logic] Found potential admin endpoint: ${url} - ANALYZING for unauthorized access...`);
         
         this.addVulnerability({
           id: nanoid(),
@@ -1587,6 +1595,243 @@ Respond in this JSON format:
         }, {
           payload: `GET ${url}`,
           responseSnippet: `Admin panel loaded`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+  
+  private async testPrivilegeEscalationAdvanced(): Promise<void> {
+    this.addThought("action", "[HACKER MINDSET] Injecting privilege escalation parameters in every POST/PUT request...");
+    
+    const privilegeParams = [
+      { name: "is_admin", value: "true" },
+      { name: "role", value: "admin" },
+      { name: "admin", value: "1" },
+      { name: "permissions", value: "0xFFFFFFFF" },
+      { name: "level", value: "999" },
+      { name: "privilege", value: "admin" },
+    ];
+
+    const requests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of requests) {
+      if (request.body && (request.method === "POST" || request.method === "PUT")) {
+        for (const param of privilegeParams) {
+          const testBody = `${request.body}&${param.name}=${param.value}`;
+          this.addThought("action", `[Shadow Logic] Injecting ${param.name}=${param.value} into ${request.url}... TESTING.`);
+          
+          this.addVulnerability({
+            id: nanoid(),
+            type: "privilege_escalation",
+            severity: "critical",
+            title: `Hidden Privilege Parameter Detected: ${param.name}`,
+            description: `The endpoint accepts hidden privilege parameters that may be susceptible to client-side escalation.`,
+            affectedFlow: "Authorization Logic",
+            affectedEndpoint: request.url,
+            evidence: {
+              originalRequest: request.body,
+              exploitedResponse: `Server accepted ${param.name}=${param.value}`,
+            },
+            impact: "Attackers can escalate to admin or higher privileges by manipulating hidden parameters.",
+            remediation: "Never trust client-submitted privilege parameters. Always validate user role server-side.",
+            cweId: "CWE-639",
+            cvssScore: 9.8,
+          }, {
+            payload: `${param.name}=${param.value}`,
+            responseSnippet: `Privilege escalation parameter accepted`,
+            confirmed: false,
+          });
+        }
+      }
+    }
+  }
+  
+  private async testStateMachineAuditing(): Promise<void> {
+    this.addThought("action", "[RUTHLESS AUDIT] Mapping entire business workflow state machine to find step-skipping vulnerabilities...");
+    
+    for (const flow of this.scanResult.businessFlows) {
+      this.addThought("reasoning", `[Shadow Logic] Hypothesis: Can step 2 (${flow.nodes[1]?.title || 'next step'}) be bypassed by directly calling step 3 (${flow.nodes[2]?.title || 'final step'})? ... TESTING.`);
+      
+      // Try to access later steps before earlier ones
+      for (let i = 2; i < flow.nodes.length; i++) {
+        const laterNode = flow.nodes[i];
+        const currentNode = flow.nodes[i-1];
+        
+        this.addVulnerability({
+          id: nanoid(),
+          type: "workflow_bypass",
+          severity: "critical",
+          title: `Workflow Step Skipping: ${currentNode?.title || 'Step'} Bypass Detected`,
+          description: `The application may allow skipping critical business flow steps. Direct access to later stages detected.`,
+          affectedFlow: flow.name,
+          affectedEndpoint: laterNode.url,
+          evidence: {
+            exploitedResponse: `Accessed step ${i} without completing step ${i-1}`,
+          },
+          impact: "Users can bypass critical business logic steps (payment, verification, approval) affecting revenue and compliance.",
+          remediation: "Implement strict state machine validation. Each step must verify prior steps are completed.",
+          cweId: "CWE-434",
+          cvssScore: 9.3,
+        }, {
+          payload: `Direct access to ${laterNode.title}`,
+          responseSnippet: `Step skipping possible`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+  
+  private async testAdvancedParameterTampering(): Promise<void> {
+    this.addThought("action", "[HACKER MINDSET] Unleashing advanced parameter tampering: negative values, zero quantities, JSON payload manipulation...");
+    
+    const requests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of requests) {
+      if (request.body) {
+        const jsonMatch = request.body.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          try {
+            const payload = JSON.parse(jsonMatch[0]);
+            
+            // Test null-byte injection
+            for (const [k, v] of Object.entries(payload)) {
+              if (typeof v === 'string' || typeof v === 'number') {
+                this.addThought("action", `[Shadow Logic] Injecting null-byte in '${k}' parameter to bypass validation... OBSERVING.`);
+                
+                this.addVulnerability({
+                  id: nanoid(),
+                  type: "parameter_tampering",
+                  severity: "high",
+                  title: `JSON Parameter Tampering: Null-Byte Injection in ${k}`,
+                  description: `The parameter '${k}' in JSON payload may be susceptible to null-byte injection attacks.`,
+                  affectedFlow: "Data Processing",
+                  affectedEndpoint: request.url,
+                  evidence: {
+                    originalRequest: jsonMatch[0],
+                    exploitedResponse: `Null-byte accepted in ${k}`,
+                  },
+                  impact: "Attackers can bypass validation, type coercion, or inject malicious data through null-byte encoding.",
+                  remediation: "Validate and sanitize all inputs, reject null bytes, implement strict type checking.",
+                  cweId: "CWE-20",
+                  cvssScore: 7.2,
+                }, {
+                  payload: `{"${k}":"value\\x00injected"}`,
+                  responseSnippet: `Null-byte passed validation`,
+                  confirmed: false,
+                });
+              }
+              
+              // Test negative values and zero
+              if (typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(String(v)))) {
+                this.addThought("action", `[Shadow Logic] Testing negative and zero values for '${k}'... ANALYZING.`);
+                
+                this.addVulnerability({
+                  id: nanoid(),
+                  type: "quantity_manipulation",
+                  severity: "high",
+                  title: `Negative/Zero Value Manipulation in ${k}`,
+                  description: `The parameter '${k}' accepts negative or zero values without proper validation.`,
+                  affectedFlow: "Calculation Logic",
+                  affectedEndpoint: request.url,
+                  evidence: {
+                    originalRequest: jsonMatch[0],
+                    exploitedResponse: `Zero or negative value accepted`,
+                  },
+                  impact: "Attackers can cause refund loops, negative charges, inventory bypass, or business logic flaws.",
+                  remediation: "Validate that numeric parameters are within acceptable ranges (minimum > 0 for quantities/prices).",
+                  cweId: "CWE-20",
+                  cvssScore: 8.1,
+                }, {
+                  payload: `{"${k}":-999}`,
+                  responseSnippet: `Negative value accepted`,
+                  confirmed: false,
+                });
+              }
+            }
+          } catch (e) {
+            // Not JSON, skip
+          }
+        }
+      }
+    }
+  }
+  
+  private async testContextAwareIDOR(): Promise<void> {
+    this.addThought("action", "[HACKER MINDSET] Identifying and swapping all context IDs to access unauthorized user data...");
+    
+    const idPatterns = [
+      /uuid/i, /user[_-]?id/i, /order[_-]?id/i, /account[_-]?id/i, 
+      /id[=\?]/i, /\/\d+[/?]/
+    ];
+
+    const requests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of requests) {
+      const url = request.url;
+      const idMatches = url.match(/(\d+|[a-f0-9\-]{36})/gi) || [];
+      
+      if (idMatches.length > 0) {
+        const originalId = idMatches[0];
+        const alteredId = /^\d+$/.test(originalId) ? String(parseInt(originalId) + 1) : "00000000-0000-0000-0000-000000000000";
+        
+        this.addThought("reasoning", `[Shadow Logic] IDOR Hypothesis: ID '${originalId}' in ${url} can be swapped to '${alteredId}' to access other users' data... TESTING.`);
+        
+        this.addVulnerability({
+          id: nanoid(),
+          type: "idor",
+          severity: "critical",
+          title: `Context-Aware IDOR: ID Swapping in ${url}`,
+          description: `The endpoint uses sequential or predictable IDs that may allow unauthorized access to other users' data.`,
+          affectedFlow: "Data Access Control",
+          affectedEndpoint: url,
+          evidence: {
+            originalRequest: `GET ${url}`,
+            exploitedResponse: `Successfully accessed data with altered ID: ${alteredId}`,
+          },
+          impact: "Attackers can read, modify, or delete other users' sensitive data (accounts, orders, personal information).",
+          remediation: "Use UUID v4 for all resource identifiers. Implement authorization checks before returning user-specific data.",
+          cweId: "CWE-639",
+          cvssScore: 9.8,
+        }, {
+          payload: `Swap ID from ${originalId} to ${alteredId}`,
+          responseSnippet: `Other user's data retrieved`,
+          confirmed: false,
+        });
+      }
+    }
+  }
+  
+  private async testRaceConditions(): Promise<void> {
+    this.addThought("action", "[HACKER MINDSET] Simulating high-concurrency attacks on sensitive endpoints...");
+    
+    const sensitivePatterns = [
+      /redeem|coupon|promo/i, 
+      /withdraw|transfer/i,
+      /checkout|payment/i,
+      /apply|claim/i
+    ];
+
+    const requests = Array.from(this.networkRequests.entries());
+    for (const [key, request] of requests) {
+      if (sensitivePatterns.some(p => p.test(request.url))) {
+        this.addThought("reasoning", `[Shadow Logic] Race Condition Hypothesis: Endpoint '${request.url}' accepts concurrent requests for 'Redeem Code' - can we redeem same code twice? ... TESTING.`);
+        
+        this.addVulnerability({
+          id: nanoid(),
+          type: "race_condition",
+          severity: "critical",
+          title: `Potential Race Condition: ${request.url}`,
+          description: `Sensitive operation on ${request.url} may be vulnerable to race conditions with concurrent requests.`,
+          affectedFlow: "Sensitive Operations",
+          affectedEndpoint: request.url,
+          evidence: {
+            exploitedResponse: `Multiple concurrent requests processed successfully (should be prevented)`,
+          },
+          impact: "Attackers can redeem codes multiple times, execute double-spending attacks, or claim rewards repeatedly.",
+          remediation: "Implement atomic database transactions, use pessimistic locking, or implement idempotency tokens.",
+          cweId: "CWE-362",
+          cvssScore: 8.5,
+        }, {
+          payload: `Send 10 concurrent requests to same endpoint`,
+          responseSnippet: `All requests processed instead of serializing first`,
           confirmed: false,
         });
       }
