@@ -954,3 +954,41 @@ export interface ScannerCostConfig {
   selfRegulationThreshold: number;
   authenticatedScanEnabled: boolean;
 }
+
+// =====================================================
+// TABLE 21: EMPLOYEE_RISK_RADAR - Domain-based email leak tracking
+// =====================================================
+
+export const employeeRiskRadarTable = pgTable("employee_risk_radar", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  targetDomain: varchar("target_domain", { length: 255 }).notNull(),
+  riskScore: integer("risk_score").default(0),
+  totalLeakedEmails: integer("total_leaked_emails").default(0),
+  status: varchar("status", { length: 20 }).default("pending"),
+  lastScannedAt: timestamp("last_scanned_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdIdx: index("employee_risk_radar_user_id_idx").on(table.userId),
+  domainIdx: index("employee_risk_radar_domain_idx").on(table.targetDomain),
+}));
+
+export type EmployeeRiskRadar = typeof employeeRiskRadarTable.$inferSelect;
+
+// =====================================================
+// TABLE 22: LEAKED_EMAILS - Detailed leak information
+// =====================================================
+
+export const leakedEmailsTable = pgTable("leaked_emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  radarId: varchar("radar_id").notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  breachNames: text("breach_names").notNull(), // Comma-separated or JSON list
+  riskLevel: varchar("risk_level", { length: 20 }).default("low"),
+  leakedAt: timestamp("leaked_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  radarIdIdx: index("leaked_emails_radar_id_idx").on(table.radarId),
+}));
+
+export type LeakedEmail = typeof leakedEmailsTable.$inferSelect;

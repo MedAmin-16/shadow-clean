@@ -112,6 +112,8 @@ import {
   getPhishingCampaignStats,
   deletePhishingCampaign,
   getFeatureAccess,
+  getRadarData,
+  startRadarScan,
 } from "./src/controllers/advancedFeaturesController";
 
 export async function registerRoutes(
@@ -333,6 +335,10 @@ export async function registerRoutes(
   app.delete("/api/shadow-logic/scan/:scanId", requireFeature("shadow_logic"), cancelShadowLogicScan);
   app.get("/api/shadow-logic/test-types", getShadowLogicTestTypes);
   app.get("/api/shadow-logic/cost", getShadowLogicCost);
+
+  // Employee Risk Radar (ELITE only)
+  app.get("/api/employee-radar", requireMinPlan("ELITE"), getRadarData);
+  app.post("/api/employee-radar/scan", requireMinPlan("ELITE"), startRadarScan);
 
   // Secret Scan Routes - JS-Secret Workflow with Real-Time Output
   app.use("/api/secret-scan", secretScanRoutes);

@@ -7,9 +7,38 @@ import { complianceService } from "../services/compliance";
 import { attackPathService } from "../services/attackPath";
 import { monitoringService } from "../services/monitoring";
 import { phishingService } from "../services/phishing";
+import { employeeRiskRadarService } from "../services/employeeRiskRadarService";
 import { storage } from "../../storage";
 import { insertMonitoringScheduleSchema, insertPhishingCampaignSchema } from "@shared/advancedFeatures";
 import type { PlanLevel } from "@shared/schema";
+
+export async function getRadarData(req: PlanGatedRequest, res: Response) {
+  try {
+    const userId = req.userId!;
+    const data = await employeeRiskRadarService.getRadarData(userId);
+    res.json({ success: true, data: data || { status: "no_data" } });
+  } catch (error) {
+    console.error("[AdvancedFeatures] Radar data fetch error:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch radar data" });
+  }
+}
+
+export async function startRadarScan(req: PlanGatedRequest, res: Response) {
+  try {
+    const userId = req.userId!;
+    const { domain } = req.body;
+
+    if (!domain) {
+      return res.status(400).json({ success: false, error: "Target domain is required" });
+    }
+
+    const result = await employeeRiskRadarService.performRadarScan(userId, domain);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("[AdvancedFeatures] Radar scan start error:", error);
+    res.status(500).json({ success: false, error: "Failed to start radar scan" });
+  }
+}
 
 export async function searchThreatIntel(req: PlanGatedRequest, res: Response) {
   try {
