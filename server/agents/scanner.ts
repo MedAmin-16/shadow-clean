@@ -392,7 +392,7 @@ const vulnerabilityTemplates: VulnerabilityTemplate[] = [
 export const AGENT_SWARM = {
   "AGENT-01": { name: "Network Reconnaissance", tool: "nmap", command: "nmap -sV -T4 -Pn" },
   "AGENT-02": { name: "Subdomain Enumeration", tool: "assetfinder", command: "/home/runner/workspace/bin/assetfinder -subs-only" },
-  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 5 -system-chromium --headless-no-sandbox -it 0 -silent -u" },
+  "AGENT-03": { name: "Web Crawler & Spider", tool: "katana", command: "/home/runner/workspace/bin/katana -d 5 -jc -kf all -system-chromium --headless-no-sandbox -it 0 -silent -u" },
   "AGENT-04": { name: "Vulnerability Scanner", tool: "nuclei", command: "/home/runner/workspace/bin/nuclei -t /home/runner/workspace/nuclei-templates -ni -timeout 4 -c 50 -rl 150 -bs 25 -v -stats -u" },
   "AGENT-05": { name: "XSS Exploitation (ELITE)", tool: "dalfox", command: "/home/runner/workspace/bin/dalfox -timeout 3 -rate-limit 150 --worker 50 --skip-bypassing -u" },
   "AGENT-06": { name: "Command Injection (ELITE)", tool: "commix", command: "python3 /home/runner/workspace/commix/commix.py --batch -u" },
@@ -401,7 +401,7 @@ export const AGENT_SWARM = {
   "AGENT-09": { name: "URL History Mining", tool: "waybackurls", command: "/home/runner/workspace/bin/waybackurls" },
   "AGENT-10": { name: "HTTP Probing", tool: "httpx", command: "/home/runner/workspace/bin/httpx -silent -status-code -follow-redirects -t 50 -rate-limit 150 -l" },
   "AGENT-11": { name: "Technology Detection", tool: "whatweb", command: "python3 -m whatweb -a 3" },
-  "AGENT-12": { name: "Directory Fuzzing", tool: "ffuf", command: "/home/runner/workspace/bin/ffuf -w /usr/share/wordlists/dirb/common.txt -u" },
+  "AGENT-12": { name: "Directory Fuzzing", tool: "ffuf", command: "/home/runner/workspace/bin/ffuf -w /home/runner/workspace/wordlists/common.txt -mc 200,301,302 -silent -u" },
   "AGENT-13": { name: "Hidden Parameters", tool: "paramspider", command: "python3 -m paramspider -l" },
   "AGENT-14": { name: "Archive History", tool: "gau", command: "/home/runner/workspace/bin/gau --subs" },
 };
@@ -547,6 +547,40 @@ export async function runScannerAgent(
       }
     } catch (sqlmapError) {
       emitStdoutLog(scanId, `[ERROR] SQLMap scanning failed: ${sqlmapError instanceof Error ? sqlmapError.message : "unknown error"}. Continuing to next tool...`, { agentLabel: "SCANNER" });
+    }
+
+    // RUN FFUZ FOR SENSITIVE ENDPOINTS
+    emitStdoutLog(scanId, `[RUNNING] ffuf -w wordlists/common.txt -u ${target}/FUZZ -mc 200,301,302`, { agentLabel: "SCANNER" });
+    try {
+      const ffufOutput = await executeAgent(scanId, "/home/runner/workspace/bin/ffuf", ["-w", "/home/runner/workspace/wordlists/common.txt", "-u", `${target}/FUZZ`, "-mc", "200,301,302", "-silent"], "AGENT-12");
+      const sensitivePaths = ["/admin", "/.env", "/api/v1", "/config", "/.git", "/backup"];
+      const ffufLines = ffufOutput.split("\n");
+      
+      for (const line of ffufLines) {
+        if (line.includes(" [Status: 200") || line.includes(" [Status: 301") || line.includes(" [Status: 302")) {
+          const parts = line.split(" ");
+          const pathPart = parts.find(p => p.startsWith("/") || (p.length > 1 && !p.includes("[")));
+          if (pathPart) {
+            const isSensitive = sensitivePaths.some(p => pathPart.toLowerCase().includes(p));
+            if (isSensitive) {
+              const vuln: EnhancedVulnerability = {
+                id: `ffuf-sensitive-${Date.now()}-${Math.random()}`,
+                title: "[SENSITIVE ENDPOINT] Exposed Administrative or Config Path",
+                description: `Found sensitive endpoint via fuzzing: ${pathPart}. Status code indicates accessibility.`,
+                severity: "high",
+                owaspCategory: "A01:2021-Broken Access Control",
+                port: 443,
+                service: "https",
+                remediationCode: "Restrict access to administrative and configuration endpoints using IP whitelisting or strong authentication."
+              };
+              findings.push(vuln);
+              emitStdoutLog(scanId, `🚨 [SENSITIVE ENDPOINT] Found: ${pathPart}`, { agentLabel: "SCANNER", type: "finding" });
+            }
+          }
+        }
+      }
+    } catch (ffufError) {
+      emitStdoutLog(scanId, `[ERROR] Ffuf fuzzing failed: ${ffufError instanceof Error ? ffufError.message : "unknown error"}. Continuing...`, { agentLabel: "SCANNER" });
     }
 
     // ADAPTIVE ERROR HANDLING: Check error count and adjust rate-limit if WAF detected

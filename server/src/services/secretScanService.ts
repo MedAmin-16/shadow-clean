@@ -96,7 +96,8 @@ export class SecretScanService {
         // Use system chromium with headless flags, no sandbox, short timeout
         const katanaArgs = [
           "-u", target,
-          "-jc",                      // Output JSON+crawl
+          "-jc",                      // Deep JS crawling
+          "-kf", "all",                // Known files
           "-system-chrome",            // Use system installed chromium
           "-no-sandbox",               // Run without sandbox (safe in container)
           "-headless",                 // Headless mode
