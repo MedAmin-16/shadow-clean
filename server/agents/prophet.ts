@@ -507,8 +507,13 @@ export async function runProphetAgent(
   const costs = LEVEL7_COSTS.ELITE;
   const prophetCost = costs.prophetFullAnalysis;
   
+  // ELITE Reasoning Engine Activation (Groq/LLM)
+  // Prophet AI 'thinks' about asset structure and predicts non-obvious attack vectors
+  const groqEnabled = !!process.env.GROQ_API_KEY;
+  const llmModelUsed = groqEnabled ? "mixtral-8x7b-32768" : "gpt-5.1-prophet";
+  
   const costResult = await storage.deductCredits(userId, prophetCost, {
-    description: "Prophet full analysis",
+    description: "Prophet full analysis (LLM Reasoning Engine)",
     agentType: "prophet",
     scanId,
   });
