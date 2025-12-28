@@ -9,7 +9,7 @@ import { ActivityLog } from "@/components/ActivityLog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { LiveTerminal } from "@/components/LiveTerminal";
 import { useTerminal } from "@/hooks/useTerminal";
-import { Plus, Search, Zap, Square } from "lucide-react";
+import { Plus, Search, Zap, Square, Inbox } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -19,6 +19,7 @@ import { VulnerabilityCard } from "@/components/VulnerabilityCard";
 import { ProphetAISection } from "@/components/ProphetAISection";
 import { PlanBadge } from "@/components/PlanBadge";
 import { ScanResultsPage } from "@/components/ScanResultsPage";
+import { UpgradeRequired } from "@/components/UpgradeRequired";
 
 interface DashboardMetrics {
   securityScore: number;
@@ -249,99 +250,120 @@ export default function DashboardPage() {
       {/* Vulnerability Findings Grid */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Latest Findings</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <VulnerabilityCard
-            title="AWS Access Key Leaked"
-            severity="critical"
-            tool="Katana + Nuclei"
-            url="/assets/config.js"
-            details="Unencrypted AWS credentials found in JavaScript files"
-            timestamp="2 min ago"
-          />
-          <VulnerabilityCard
-            title="SQL Injection Endpoint"
-            severity="high"
-            tool="SQLMap"
-            url="/api/search?q="
-            details="Database query parameter not sanitized"
-            timestamp="5 min ago"
-          />
-          <VulnerabilityCard
-            title="Exposed API Token"
-            severity="high"
-            tool="Subjs + Nuclei"
-            url="/static/app.js"
-            details="OAuth token visible in source code"
-            timestamp="8 min ago"
-          />
-          <VulnerabilityCard
-            title="Weak Password Hash"
-            severity="medium"
-            tool="Gau + Nuclei"
-            url="/api/users"
-            details="MD5 hashing detected for password storage"
-            timestamp="12 min ago"
-          />
-          <VulnerabilityCard
-            title="Hidden Admin Panel"
-            severity="medium"
-            tool="Waybackurls"
-            url="/admin/dashboard"
-            details="Found via historical Wayback Machine data"
-            timestamp="15 min ago"
-          />
-          <VulnerabilityCard
-            title="Info Disclosure"
-            severity="low"
-            tool="HTTPX"
-            url="/debug.php"
-            details="Debug endpoint exposing system information"
-            timestamp="20 min ago"
-          />
-        </div>
+        {vulnerabilities.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 border border-dashed rounded-lg bg-black/20">
+            <Inbox className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-center">No vulnerabilities found yet. Start your first mission!</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {displayVulnerabilities.map((v) => (
+              <VulnerabilityCard
+                key={v.id}
+                title={v.title}
+                severity={v.severity}
+                tool={v.tool || "Scanner"}
+                url={v.url || "N/A"}
+                details={v.description || "No details provided"}
+                timestamp={formatTimestamp(v.timestamp)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Prophet AI Predictions */}
-      {showProphetAnalysis && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Threat Prediction Engine</h2>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Threat Prediction Engine</h2>
+          {user?.planLevel === "ELITE" && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setShowProphetAnalysis(false)}
+              onClick={() => setShowProphetAnalysis(!showProphetAnalysis)}
               className="text-xs"
             >
-              Dismiss
+              {showProphetAnalysis ? "Hide" : "Show"}
             </Button>
+          )}
+        </div>
+        {user?.planLevel === "ELITE" ? (
+          showProphetAnalysis && (
+            <ProphetAISection
+              isAnalyzing={activeScan?.status === "running"}
+              predictions={[]}
+            />
+          )
+        ) : (
+          <UpgradeRequired 
+            feature="AI-powered Prediction" 
+            requiredPlan="ELITE"
+            currentPlan={user?.planLevel || "STANDARD"}
+            description="Unlock the Threat Prediction Engine to anticipate and prevent future attacks using advanced AI analysis."
+          />
+        )}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <RecentVulnerabilities
+            vulnerabilities={displayVulnerabilities}
+            onViewAll={() => console.log("View all vulnerabilities")}
+          />
+        </div>
+        <ActivityLog activities={displayActivities} />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h2 className="text-lg font-semibold">Your Projects</h2>
+          <button
+            className="text-sm text-primary hover:underline"
+            onClick={() => console.log("View all projects")}
+            data-testid="link-view-all-projects"
+          >
+            View all
+          </button>
+        </div>
+        {projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 border border-dashed rounded-lg bg-black/20">
+            <Inbox className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-center mb-4">No projects found. Start your first mission!</p>
+            <Button onClick={() => setCreateDialogOpen(true)}>Create New Project</Button>
           </div>
-          <ProphetAISection
-            isAnalyzing={activeScan?.status === "running"}
-            predictions={[
-              {
-                path: "Likely AWS credentials in /api/config.js - HIGH PRIORITY",
-                confidence: 92,
-                type: "secret",
-              },
-              {
-                path: "SQL injection vulnerable endpoint pattern detected",
-                confidence: 78,
-                type: "vulnerability",
-              },
-              {
-                path: "Admin panel discovered via historical records",
-                confidence: 85,
-                type: "endpoint",
-              },
-              {
-                path: "OAuth token exposure in main application bundle",
-                confidence: 88,
-                type: "secret",
-              },
-            ]}
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {displayProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                {...project}
+                onClick={() => console.log("Project clicked:", project.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <CreateProjectDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onSubmit={(data) => createProjectMutation.mutate(data)}
+      />
+
+      {showTerminal && activeScan && (
+        <div>
+          <h2 className="text-lg font-semibold mb-4">Live Scan Terminal</h2>
+          <LiveTerminal
+            logs={logs}
+            isActive={activeScan.status === "running" && isConnected}
+            planLevel={(user?.planLevel as "STANDARD" | "PRO" | "ELITE") || "STANDARD"}
+            vulnStats={vulnStats}
           />
         </div>
       )}
+    </div>
+  );
+}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

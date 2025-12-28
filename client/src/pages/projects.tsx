@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProjectCard } from "@/components/ProjectCard";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
-import { Plus, Search, Filter } from "lucide-react";
+import { Plus, Search, Filter, Inbox } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -85,10 +85,23 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {filteredProjects.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground mb-4">No projects found</p>
-          <Button onClick={() => setCreateDialogOpen(true)}>Create your first project</Button>
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-48 rounded-lg" />
+          ))}
+        </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 border border-dashed rounded-xl bg-black/20">
+          <div className="p-4 rounded-full bg-muted mb-4">
+            <Inbox className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-medium mb-1">No projects found</h3>
+          <p className="text-muted-foreground mb-6 text-center max-w-xs">Start your first mission by creating a new security project.</p>
+          <Button onClick={() => setCreateDialogOpen(true)} variant="default">
+            <Plus className="h-4 w-4 mr-2" />
+            Create First Project
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScanReportViewer } from "@/components/ScanReportViewer";
-import { Search, Download, FileText, Calendar, ChevronRight } from "lucide-react";
+import { Search, Download, FileText, Calendar, ChevronRight, Inbox } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Report } from "@shared/schema";
 
@@ -73,7 +73,7 @@ export default function ReportsPage() {
           <h1 className="text-2xl font-semibold">Reports</h1>
           <p className="text-muted-foreground">View and export security reports</p>
         </div>
-        <Button variant="outline" data-testid="button-export-all">
+        <Button variant="outline" data-testid="button-export-all" disabled={reports.length === 0}>
           <Download className="h-4 w-4 mr-2" />
           Export All
         </Button>
@@ -92,11 +92,13 @@ export default function ReportsPage() {
 
       <div className="space-y-4">
         {filteredReports.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">No reports found</p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center py-24 border border-dashed rounded-xl bg-black/20">
+            <div className="p-4 rounded-full bg-muted mb-4">
+              <Inbox className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-medium mb-1">No reports found</h3>
+            <p className="text-muted-foreground mb-4 text-center max-w-xs">Run your first scan to generate comprehensive security reports.</p>
+          </div>
         ) : (
           filteredReports.map((report) => (
             <Card
