@@ -376,6 +376,18 @@ export class ShadowLogicAgent {
   async initialize(): Promise<void> {
     this.updatePhase("initializing");
     console.log(`[ShadowLogic:${this.scanId}] INIT: Starting browser initialization`);
+    
+    // PROCESS KILLER: Kill any hanging Puppeteer/Chromium processes from previous failed scans
+    try {
+      await new Promise(resolve => {
+        const { exec } = require("child_process");
+        exec("pkill -f 'chrome|chromium|playwright' || true", () => resolve(null));
+      });
+      console.log(`[ShadowLogic:${this.scanId}] INIT: Killed hanging browser processes`);
+    } catch (err) {
+      console.log(`[ShadowLogic:${this.scanId}] INIT: No hanging processes to kill`);
+    }
+    
     this.addThought("action", "Launching headless browser...");
     
     // Ensure we trigger a thought immediately for the terminal
@@ -522,14 +534,21 @@ export class ShadowLogicAgent {
     if (!this.page) return;
 
     this.updatePhase("mapping");
-    console.log(`[ShadowLogic:${this.scanId}] MAP: Starting mapping phase`);
+    console.log(`[ShadowLogic:${this.scanId}] MAP: Starting mapping phase - STATUS FORCED TO ACTIVE`);
+    
+    // STATE RESET: Force immediate transition from initializing to active
+    this.scanResult.status = "mapping"; // Guarantee we're in mapping, not initializing
+    
+    this.addThought("observation", "[STATE RESET] Forcing scan status to ACTIVE - Beginning aggressive mapping");
     this.addThought("reasoning", "Starting business flow mapping - crawling the application to understand state machine...");
     
-    // Emit phase update via socket
+    // Emit phase update via socket with immediate status
     emitToScan?.(this.scanId, "shadowLogic:system", {
-      message: "[PHASE] Mapping business flows - discovering application URLs..."
+      message: "[PHASE] Mapping business flows - discovering application URLs...",
+      status: "active"
     });
 
+    // Map phase timeout - 30 seconds for discovery, then move to testing
     const mappingTimeout = setTimeout(() => {
       console.warn(`[ShadowLogic:${this.scanId}] MAP FORCE TRANSITION: 30s limit reached`);
       this.addThought("warning", "[Shadow Logic] Mapping phase limit reached (30s). Transitioning to Testing Phase for coverage.");
@@ -676,6 +695,15 @@ export class ShadowLogicAgent {
 
     this.addThought("reasoning", "[AI THOUGHT] Starting Groq AI analysis...");
 
+    // REASONING TIMEOUT: 10 second global timeout for entire reasoning phase
+    const reasoningTimeout = setTimeout(() => {
+      console.warn(`[ShadowLogic:${this.scanId}] REASONING TIMEOUT: 10s limit reached - skipping to Aggressive Crawler`);
+      this.addThought("warning", "[Timeout] AI reasoning timeout (10s). Skipping to Aggressive Crawler with rule-based logic.");
+      (this as any)._skipGroqAnalysis = true;
+      this.groqAnalysisInProgress = false;
+      clearInterval(heartbeatInterval);
+    }, 10000);
+
     const heartbeatInterval = setInterval(() => {
       const phases = ["Checkout Flow", "User Registration", "Authentication Flow", "Parameter Validation"];
       const randomPhase = phases[Math.floor(Math.random() * phases.length)];
@@ -687,6 +715,12 @@ export class ShadowLogicAgent {
       const batchSize = 10;
 
       for (let i = 0; i < allUrls.length; i += batchSize) {
+        // Check if global reasoning timeout was triggered
+        if ((this as any)._skipGroqAnalysis) {
+          console.log(`[ShadowLogic:${this.scanId}] Groq analysis skipped due to timeout`);
+          break;
+        }
+
         const batch = allUrls.slice(i, i + batchSize);
         
         try {
@@ -2180,13 +2214,44 @@ Respond in this JSON format:
       this.eventBatchTimer = null;
     }
     
-    if (this.page) await this.page.close().catch(() => {});
-    if (this.context) await this.context.close().catch(() => {});
-    if (this.browser) await this.browser.close().catch(() => {});
+    // Force browser cleanup with aggressive timeout
+    try {
+      if (this.page) {
+        await Promise.race([
+          this.page.close().catch(() => {}),
+          new Promise(resolve => setTimeout(resolve, 3000))
+        ]);
+      }
+      if (this.context) {
+        await Promise.race([
+          this.context.close().catch(() => {}),
+          new Promise(resolve => setTimeout(resolve, 3000))
+        ]);
+      }
+      if (this.browser) {
+        await Promise.race([
+          this.browser.close().catch(() => {}),
+          new Promise(resolve => setTimeout(resolve, 3000))
+        ]);
+      }
+    } catch (err) {
+      console.error(`[ShadowLogic:${this.scanId}] Cleanup error:`, err);
+    }
     
     this.page = null;
     this.context = null;
     this.browser = null;
+    
+    // Final process killer: Clean up any remaining Chromium zombies
+    console.log(`[ShadowLogic:${this.scanId}] CLEANUP: Force killing remaining browser processes`);
+    try {
+      await new Promise(resolve => {
+        const { exec } = require("child_process");
+        exec("pkill -9 -f 'chrome|chromium|playwright' || true", () => resolve(null));
+      });
+    } catch (err) {
+      // Silently ignore
+    }
   }
 
   async run(): Promise<ShadowLogicScanResult> {

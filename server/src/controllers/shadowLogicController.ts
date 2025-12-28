@@ -240,10 +240,19 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
       }
     }
 
-    res.json({
+    // STREAM FIX: Force 200 OK with fresh data, never 304 Not Modified
+    // Even if no new thoughts, return 200 with status update to keep terminal scrolling
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("ETag", "");
+    
+    res.status(200).json({
       success: true,
       data: thoughts,
       status: scan.agent.getResult().status,
+      timestamp: new Date().toISOString(),
+      thoughtCount: thoughts.length,
     });
   } catch (error) {
     console.error("[ShadowLogic] Get thoughts error:", error);
