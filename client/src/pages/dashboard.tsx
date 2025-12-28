@@ -9,7 +9,7 @@ import { ActivityLog } from "@/components/ActivityLog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { LiveTerminal } from "@/components/LiveTerminal";
 import { useTerminal } from "@/hooks/useTerminal";
-import { Plus, Search, Zap, Square, Inbox } from "lucide-react";
+import { Brain, Plus, Search, Zap, Square, Inbox } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -22,6 +22,7 @@ import { UpgradeRequired } from "@/components/UpgradeRequired";
 import { VulnerabilityDetailsModal } from "@/components/VulnerabilityDetailsModal";
 import { AttackChainsCard } from "@/components/AttackChainsCard";
 import { EmployeeRiskRadar } from "@/components/EmployeeRiskRadar";
+import { ShadowLogicTerminal } from "@/components/ShadowLogicTerminal";
 
 interface DashboardMetrics {
   securityScore: number;
@@ -97,7 +98,7 @@ export default function DashboardPage() {
 
   const { data: user } = useQuery<UserData>({
     queryKey: ["/api/user/me"],
-  }) as { data: UserData };
+  }) as { data: UserData | undefined };
 
   const stopScanMutation = useMutation({
     mutationFn: async (scanId: string) => {
@@ -285,6 +286,17 @@ export default function DashboardPage() {
       {(user?.planLevel === "PRO" || user?.planLevel === "ELITE") && completedScan && (
         <div className="space-y-4">
           <AttackChainsCard chains={attackChains} isLoading={false} scanId={completedScan.id} />
+        </div>
+      )}
+
+      {/* Shadow Logic AI Terminal (ELITE only) */}
+      {user?.planLevel === "ELITE" && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Brain className="h-5 w-5 text-amber-500" />
+            Shadow Logic Neural Stream
+          </h2>
+          <ShadowLogicTerminal scanId={activeScan?.id || completedScan?.id} />
         </div>
       )}
 

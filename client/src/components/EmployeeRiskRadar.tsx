@@ -43,8 +43,8 @@ export function EmployeeRiskRadar() {
     },
   });
 
-  const radarData = radarResponse?.success && "id" in radarResponse.data ? radarResponse.data as RadarData : null;
-  const isNoData = !radarData || (radarResponse?.success && "status" in radarResponse.data && radarResponse.data.status === "no_data");
+  const radarData = radarResponse?.success && radarResponse.data && "id" in radarResponse.data ? radarResponse.data as RadarData : null;
+  const isNoData = !radarData || (radarResponse?.success && radarResponse.data && "status" in radarResponse.data && radarResponse.data.status === "no_data");
 
   const getRiskColor = (score: number) => {
     if (score >= 70) return "text-red-500";
@@ -103,7 +103,7 @@ export function EmployeeRiskRadar() {
               <span className="animate-pulse">Harvesting leaked emails from OSINT sources...</span>
               <span>Scanning...</span>
             </div>
-            <Progress value={45} className="h-2 bg-purple-900/20" indicatorClassName="bg-purple-500" />
+            <Progress value={45} className="h-2 bg-purple-900/20" />
           </div>
         ) : (
           <div className="space-y-6">

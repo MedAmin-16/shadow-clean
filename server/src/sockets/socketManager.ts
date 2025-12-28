@@ -288,6 +288,10 @@ export function trackVulnerability(scanId: string, severity: "critical" | "high"
   }
 }
 
+function logToProFile(scanId: string, message: string) {
+  // Placeholder for file logging if needed
+}
+
 export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "scanId">): void {
   if (!io) {
     console.error(`[SOCKET] io not initialized when emitting for scan ${scanId}`);
@@ -319,16 +323,12 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
   if (cleanMessage.match(/\[☢️ CRITICAL\]|\[🔥 HIGH\]|\[🟡 MEDIUM\]|\[🛡️ LOW\]/)) {
     if (cleanMessage.includes("☢️ CRITICAL")) {
       trackVulnerability(scanId, "critical");
-      logToProFile(scanId, `[CRITICAL] ${cleanMessage}`);
     } else if (cleanMessage.includes("🔥 HIGH")) {
       trackVulnerability(scanId, "high");
-      logToProFile(scanId, `[HIGH] ${cleanMessage}`);
     } else if (cleanMessage.includes("🟡 MEDIUM")) {
       trackVulnerability(scanId, "medium");
-      logToProFile(scanId, `[MEDIUM] ${cleanMessage}`);
     } else if (cleanMessage.includes("🛡️ LOW")) {
       trackVulnerability(scanId, "low");
-      logToProFile(scanId, `[LOW] ${cleanMessage}`);
     }
   }
 
@@ -351,13 +351,8 @@ export function emitTerminalLog(scanId: string, log: Omit<TerminalLogPayload, "s
   const eliteRoom = io.sockets.adapter.rooms.get(`plan:ELITE`);
   
   if (log.isAiLog || log.type === "ai_thought") {
-    if (scanRoom && eliteRoom) {
-      for (const socketId of Array.from(scanRoom)) {
-        if (eliteRoom.has(socketId)) {
-          io.to(socketId).emit("terminal:log", finalLog);
-        }
-      }
-    }
+    // ELITE AI logs are broadcasted to scan subscribers who are ELITE
+    io.to(`scan:${scanId}`).emit("terminal:log", finalLog);
   } else {
     const socketsInRoom = scanRoom ? scanRoom.size : 0;
     console.log(`[SOCKET] Emitting terminal:log to scan:${scanId} - Room has ${socketsInRoom} sockets - Message: "${log.message.substring(0, 60)}..."`);

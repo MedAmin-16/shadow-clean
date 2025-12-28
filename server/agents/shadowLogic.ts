@@ -20,6 +20,7 @@ let emitUrlStream: any;
 let emitPhaseUpdate: any;
 let emitToScan: any;
 let emitAiThought: any;
+let emitTerminalLog: any;
 
 const loadSocketFunctions = async () => {
   if (!emitScanProgress) {
@@ -29,6 +30,7 @@ const loadSocketFunctions = async () => {
       emitUrlStream = socketManager.emitUrlStream;
       emitPhaseUpdate = socketManager.emitPhaseUpdate;
       emitAiThought = socketManager.emitAiThought;
+      emitTerminalLog = socketManager.emitTerminalLog;
       emitToScan = socketManager.emitToScan || ((scanId: string, event: string, data: any) => {
         const io = socketManager.getSocketServer?.();
         if (io) {
@@ -157,6 +159,16 @@ export class ShadowLogicAgent {
       details,
     };
     this.scanResult.thoughts.push(thought);
+    
+    // Stream thought to terminal
+    emitTerminalLog?.(this.scanId, {
+      id: thought.id,
+      timestamp: thought.timestamp,
+      type: "ai_thought",
+      message: message,
+      isAiLog: true,
+      agentLabel: "ShadowLogic"
+    });
     
     // AGGRESSIVE FILTERING: ONLY emit vulnerabilityFound and aiThought events
     // Suppress ALL observation and discovery events to save bandwidth and CPU
@@ -1721,7 +1733,6 @@ Respond in this JSON format:
       endpoint: vuln.affectedEndpoint,
       payload: payloadStr,
       evidence: serverResponse,
-      parameter: (vuln.evidence?.parameter as string) || null,
       cweId: vuln.cweId,
       cvss: vuln.cvssScore,
       impact: vuln.impact,
@@ -1772,42 +1783,42 @@ Respond in this JSON format:
     try {
       // Save ShadowLogic scan record
       const db = (await import("../db")).db;
-      const { shadowLogicScansTable, shadowLogicVulnerabilitiesTable, shadowLogicDiscoveriesTable } = await import("@shared/schema");
+      const { shadowlogicScansTable, shadowlogicVulnerabilitiesTable, shadowlogicDiscoveriesTable } = await import("@shared/schema");
       
       // Insert the scan record
-      await db.insert(shadowLogicScansTable).values({
+      await db.insert(shadowlogicScansTable).values({
         id: this.scanResult.id,
         userId: this.userId,
-        targetUrl: this.config.targetUrl,
+        scanId: this.scanId,
+        target: this.config.targetUrl,
         status: this.scanResult.status,
+        findingCount: this.scanResult.vulnerabilities.length,
         startedAt: new Date(this.scanResult.startedAt),
         completedAt: new Date(),
-        vulnerabilitiesFound: this.scanResult.vulnerabilities.length,
-        discoveredUrls: this.discoveredUrls.size,
-        discoveredForms: this.scanResult.statistics.formsAnalyzed,
-        discoveredApis: this.scanResult.statistics.apiEndpointsDiscovered,
-        creditCost: this.scanResult.creditCost,
-        businessFlows: this.scanResult.businessFlows,
-        statistics: this.scanResult.statistics,
+        metadata: {
+          discoveredUrls: this.discoveredUrls.size,
+          discoveredForms: this.scanResult.statistics.formsAnalyzed,
+          discoveredApis: this.scanResult.statistics.apiEndpointsDiscovered,
+          creditCost: this.scanResult.creditCost,
+          businessFlows: this.scanResult.businessFlows,
+          statistics: this.scanResult.statistics,
+        },
       }).catch(err => console.log(`[ShadowLogic:${this.scanId}] Scan record insert error:`, err));
 
       // Save vulnerabilities with technical proof
       for (const vuln of this.scanResult.vulnerabilities) {
-        await db.insert(shadowLogicVulnerabilitiesTable).values({
-          scanId: this.scanResult.id,
+        await db.insert(shadowlogicVulnerabilitiesTable).values({
+          scanId: this.scanId,
           userId: this.userId,
-          type: vuln.type,
-          severity: vuln.severity,
+          shadowlogicScanId: this.scanResult.id,
           title: vuln.title,
           description: vuln.description,
-          url: vuln.affectedEndpoint,
-          evidence: vuln.evidence,
-          isConfirmed: false,
-          cwId: vuln.cweId,
-          cvssScore: vuln.cvssScore ? String(vuln.cvssScore) : undefined,
-          affectedFlow: vuln.affectedFlow,
-          impact: vuln.impact,
+          severity: vuln.severity,
+          confidence: vuln.confidence || 0,
+          businessImpact: vuln.impact,
+          proof: vuln.evidence ? JSON.stringify(vuln.evidence) : null,
           remediation: vuln.remediation,
+          detectedAt: new Date(),
         }).catch(err => {
           console.log(`[ShadowLogic:${this.scanId}] Vulnerability persist error:`, err);
         });
@@ -1825,11 +1836,11 @@ Respond in this JSON format:
 
       // Save discovered URLs and forms
       for (const url of this.discoveredUrls) {
-        await db.insert(shadowLogicDiscoveriesTable).values({
-          scanId: this.scanResult.id,
-          userId: this.userId,
+        await db.insert(shadowlogicDiscoveriesTable).values({
+          shadowlogicScanId: this.scanResult.id,
           discoveryType: "url",
-          url: url,
+          details: { url },
+          discoveredAt: new Date(),
         }).catch(err => {
           console.log(`[ShadowLogic:${this.scanId}] Discovery persist error:`, err);
         });
@@ -1839,14 +1850,16 @@ Respond in this JSON format:
       for (const flow of this.scanResult.businessFlows) {
         for (const node of flow.nodes) {
           if (node.type === "form") {
-            await db.insert(shadowLogicDiscoveriesTable).values({
-              scanId: this.scanResult.id,
-              userId: this.userId,
+            await db.insert(shadowlogicDiscoveriesTable).values({
+              shadowlogicScanId: this.scanResult.id,
               discoveryType: "form",
-              url: node.url,
-              title: node.title,
-              method: node.method,
-              parameters: node.parameters,
+              details: {
+                url: node.url,
+                title: node.title,
+                method: node.method,
+                parameters: node.parameters,
+              },
+              discoveredAt: new Date(),
             }).catch(err => {
               console.log(`[ShadowLogic:${this.scanId}] Form discovery persist error:`, err);
             });
