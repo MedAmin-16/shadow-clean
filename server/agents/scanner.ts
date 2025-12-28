@@ -124,15 +124,21 @@ async function executeNucleiTurbo(
   return new Promise((resolve) => {
     const output: string[] = [];
     
-    // EXACT COMMAND WITH USER-SPECIFIED FLAGS - HARDCODED, NO VARIABLES
+    // EXACT COMMAND WITH OPTIMIZED FLAGS - REDUCING REQUEST COUNT FROM 8M TO <500K
     const nucleiBinary = "/home/runner/workspace/bin/nuclei";
     const nucleiArgs = [
       "-u", target,
-      "-c", "100",
-      "-rate-limit", "200",
-      "-bs", "50",
+      "-tags", "cve,critical,high,sqli,ssrf,rce,lfi",
+      "-exclude-severity", "info,low",
+      "-c", "50",
+      "-rate-limit", "300",
+      "-bs", "25",
       "-timeout", "3",
+      "-retries", "1",
+      "-fuzz",
+      "-duc",
       "-ni",
+      "-project",
       "-stats",
       "-stats-interval", "10",
       "-v"
