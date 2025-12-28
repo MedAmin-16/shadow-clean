@@ -1,89 +1,85 @@
-# One-Click WAF Hotfix Feature - Elite Experience Implementation
+# ShadowTwin - Enterprise Vulnerability Assessment Platform
 
-## Recent Changes (Dec 28, 2025)
+## Project Overview
+ShadowTwin is an advanced security platform designed for enterprise clients (CTOs/CEOs) to assess application security through multiple scanning agents, AI-powered analysis, and business impact reporting.
 
-### One-Click WAF Hotfix Implementation
+## Recent Updates (Dec 28, 2025)
 
-#### 1. **Hotfix Button in Vulnerability Details**
-- Added "Deploy WAF Hotfix" button in VulnerabilityDetailsModal
-- Located in vulnerability detail view with clear action and visual feedback
-- Disabled for non-Elite users (shows "Upgrade to Elite" popup)
+### AI Attack Chainer - Enterprise Risk Management Feature
+- **Status**: ✅ Complete
+- **Scope**: Correlation engine + executive dashboard integration
+- **Messaging Shift**: Migrated from "bounty estimates" to "Business Impact Risk" for C-suite audiences
 
-#### 2. **Elite Logic & Access Control**
-- Requires ELITE plan (`requireMinPlan("ELITE")` middleware)
-- Non-Elite users see "Upgrade to Elite" popup instead of deploy button
-- Elite users get direct access to WAF hotfix deployment
+#### Files Created:
+1. `server/src/services/attackChainer.ts` - Core correlation engine
+2. `server/src/controllers/attackChainerController.ts` - API endpoints
+3. `client/src/components/AttackChainsCard.tsx` - Executive dashboard component
 
-#### 3. **WAF Rule Generation by Vulnerability Type**
+#### Key Features:
+- **8 Pre-defined Attack Patterns**: Intelligent matching for vulnerability chains
+- **Business Impact Ratings**:
+  - CRITICAL: Potential Data Breach / Legal Liability ($500K - $50M)
+  - HIGH: Service Disruption / Brand Damage ($100K - $3M)
+  - MEDIUM: Information Leak / Compliance Risk ($50K - $500K)
+- **Regulatory Compliance Tags**: GDPR, CCPA, PCI-DSS, HIPAA, SOC2, ISO27001 violation indicators
+- **Financial Loss Estimates**: Based on industry recovery costs and breach notification requirements
+- **Executive Summaries**: Business language focusing on customer trust, operational downtime, financial impact
+- **Exploitation Paths**: Step-by-step attack sequences for technical teams
+- **Compliance Risk Indicators**: Automatic detection of regulatory violations
 
-**SQL Injection (SQLi):**
-- Blocks patterns: `union select`, `insert into`, `delete`, `drop`, quotes
-- Parameter sanitization rules
-- Prevents SQL injection attacks at WAF level
+#### API Routes:
+- `GET /api/attack-chains/:scanId` - Fetch vulnerability chains for completed scans
+- `POST /api/attack-chains/correlate` - Manual correlation trigger
 
-**Cross-Site Scripting (XSS):**
-- Blocks: `<script>` tags, `javascript:` protocol, event handlers
-- Content filtering for XSS payloads
-- Sanitizes responses to prevent script injection
+#### Plan-Based Access:
+- Available exclusively for PRO and ELITE users
+- Gated by `visual_attack_path` feature
 
-**Sensitive Endpoints:**
-- Blocks: `/.env`, `/actuator`, `/admin`, `/config`, `/api/internal`
-- Implements Captcha challenge for sensitive paths
-- Path-based blocking rules
+#### Dashboard Integration:
+- Displays after scan completion
+- Shows financial exposure and regulatory risks upfront
+- Immediate action items for leadership
+- Color-coded severity with business impact badges
 
-**Default:**
-- Anomaly detection monitoring
-- Alert-based rules for unclassified vulnerabilities
+## Architecture Overview
 
-#### 4. **User Feedback & Status**
-- Loading state: "Deploying Rule to WAF..." with spinner
-- Success message: "Vulnerability Shielded: WAF Rule #ID Active"
-- Displays rule deployment details and vendor (Cloudflare/AWS WAF)
-- 24-hour default expiration for hotfix rules
+### Scanning Agents
+- **Recon Agent**: Asset discovery and enumeration
+- **Scanner Agent**: Vulnerability detection (Nuclei-based)
+- **Exploiter Agent**: POC validation
+- **RL Exploiter**: Reinforcement learning-based exploitation
+- **Prophet Agent**: Threat prediction
+- **Shadow Logic**: Business logic vulnerability auditing
+- **Reporter Agent**: Report generation
+- **Autonomous Defense**: Automated remediation suggestions
 
-#### 5. **Dashboard Shielded Badge**
-- Green shield badge appears next to shielded vulnerabilities
-- Visual indicator: "Shielded" with shield icon
-- Distinguishes protected vs unprotected vulnerabilities
-- Appears in vulnerability lists (VulnerabilityRow component)
+### Core Services
+- **Credit System**: Token-based cost management
+- **Threat Intelligence**: CVE and SHODAN integration
+- **Database Sandbox**: Isolated analysis environment
+- **Remediation Engine**: AI-powered fix suggestions
+- **Compliance Reporting**: Framework-based reports (PCI-DSS, HIPAA, SOC2, GDPR)
+- **Phishing Simulation**: Employee security awareness
+- **Cloud Security (CSPM)**: AWS/GCP/Azure misconfiguration scanning
+- **Attack Chainer**: Vulnerability correlation for business impact
 
-## Implementation Details
+### Database
+- PostgreSQL with Drizzle ORM
+- 20+ tables for scans, vulnerabilities, assets, compliance, monitoring
 
-### Files Modified:
-- `client/src/components/VulnerabilityRow.tsx` - Added wafShielded badge display
-- `client/src/components/RecentVulnerabilities.tsx` - Added wafShielded/wafRuleId types
-- `server/routes.ts` - Enhanced `/api/vulnerabilities/:vulnId/deploy-hotfix` endpoint
+## User Tiers
+- **STANDARD**: Basic scanning
+- **PRO**: Advanced agents, daily monitoring, cloud security
+- **ELITE**: All features, priority support, advanced AI
 
-### Key Features:
-1. **Smart WAF Rule Generation** - Rules tailored to vulnerability type
-2. **Vendor Integration Ready** - Structure supports Cloudflare/AWS WAF APIs
-3. **Elite-Only Protection** - Premium feature with plan verification
-4. **Visual Status Tracking** - Users see deployment progress and success
+## Tech Stack
+- **Frontend**: React + TypeScript + Tailwind CSS + Vite
+- **Backend**: Express.js + Node.js + TypeScript
+- **Database**: PostgreSQL
+- **Real-time**: WebSocket for live scan streaming
+- **LLM Integration**: OpenAI GPT-4o, Groq
 
-### Database Schema Extensions:
-- `vulnerability.wafShielded: boolean` - Tracks shield status
-- `vulnerability.wafRuleId: string` - References deployed WAF rule
-
-## Architecture
-
-```
-VulnerabilityDetailsModal (UI)
-  ↓ (Elite check)
-  ↓ (Deploy button click)
-  ↓
-/api/vulnerabilities/:vulnId/deploy-hotfix (Server)
-  ↓ (Categorize vulnerability)
-  ↓ (Generate WAF rules)
-  ↓ (Return rule ID + deployment details)
-  ↓
-VulnerabilityRow (Dashboard)
-  ↓ (Display Shielded badge)
-```
-
-## Turns Scanner into "Protector"
-
-The One-Click WAF Hotfix transforms ShadowTwin from a vulnerability **reporter** into an active **protector**:
-- Finds vulnerabilities with Nuclei/scanners
-- Immediately shields with WAF rules
-- Provides real-time protection status
-- Elite users can shield their entire infrastructure with one click per vulnerability
+## Current Build Status
+✅ Build passes successfully
+✅ All features compiled and deployed
+✅ Ready for testing

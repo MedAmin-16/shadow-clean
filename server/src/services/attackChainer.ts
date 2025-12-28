@@ -12,6 +12,11 @@ export interface AttackChain {
   impact: string;
   reasoning: string;
   exploitPath: string;
+  businessImpact: string;
+  estimatedLossMin: number;
+  estimatedLossMax: number;
+  complianceRisks: string[];
+  executiveSummary: string;
 }
 
 interface VulnRecord {
@@ -33,7 +38,12 @@ const ATTACK_PATTERNS = [
     severity: "critical" as const,
     description: "Sensitive information exposed combined with outdated technology that can be exploited",
     impact: "Complete system compromise through leaked credentials targeting old vulnerabilities",
+    businessImpact: "CRITICAL: Potential Data Breach / Legal Liability",
+    estimatedLossMin: 500000,
+    estimatedLossMax: 5000000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "CCPA Violation", "HIPAA Breach Notification"],
     reasoning: "When sensitive data (API keys, passwords) is exposed through information disclosure AND the system runs outdated software with known vulnerabilities, attackers can use the leaked credentials to authenticate and then exploit the outdated components.",
+    executiveSummary: "Exposed credentials combined with outdated systems creates a direct path to complete data breach. This puts customer data at risk and exposes your organization to regulatory fines, legal action, and irreparable brand damage.",
   },
   {
     id: "xss_open_redirect",
@@ -43,7 +53,12 @@ const ATTACK_PATTERNS = [
     severity: "high" as const,
     description: "XSS vulnerability chained with open redirect to steal credentials",
     impact: "Session hijacking and credential theft through phishing-like attacks",
+    businessImpact: "HIGH: Service Disruption / Brand Damage",
+    estimatedLossMin: 100000,
+    estimatedLossMax: 1000000,
+    complianceRisks: ["PCI-DSS Violation Risk", "SOC2 Compliance Gap"],
     reasoning: "XSS (Cross-Site Scripting) can execute malicious JavaScript, which can redirect users to a phishing site via an open redirect vulnerability, allowing attackers to steal session cookies or credentials.",
+    executiveSummary: "Attackers can deceive your users into compromising their own accounts. This leads to unauthorized transactions, loss of customer trust, and potential payment card fraud penalties.",
   },
   {
     id: "subdomain_takeover_csrf",
@@ -53,7 +68,12 @@ const ATTACK_PATTERNS = [
     severity: "high" as const,
     description: "Subdomain takeover enabling CSRF attacks",
     impact: "Unauthorized account modifications and data manipulation",
+    businessImpact: "HIGH: Service Disruption / Brand Damage",
+    estimatedLossMin: 200000,
+    estimatedLossMax: 2000000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "SOC2 Control Failure"],
     reasoning: "A takeover of an abandoned subdomain can host CSRF attack payloads, and since it shares the same root domain, CSRF protections may be bypassed if they only check the root domain.",
+    executiveSummary: "Forgotten subdomains can be weaponized to hijack user sessions and manipulate account data. Customers lose confidence in your security posture, leading to churn and reputational damage.",
   },
   {
     id: "sql_injection_auth_bypass",
@@ -63,7 +83,12 @@ const ATTACK_PATTERNS = [
     severity: "critical" as const,
     description: "SQL injection combined with weak authentication",
     impact: "Complete database access and user impersonation",
+    businessImpact: "CRITICAL: Potential Data Breach / Legal Liability",
+    estimatedLossMin: 1000000,
+    estimatedLossMax: 10000000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "CCPA Violation", "HIPAA Breach Notification", "PCI-DSS Violation"],
     reasoning: "SQL injection in login forms allows bypassing authentication, or can be used to directly extract password hashes that can be cracked offline.",
+    executiveSummary: "Direct database access without authentication means all customer data is exposed. This triggers mandatory breach notifications, regulatory fines, and existential damage to customer trust.",
   },
   {
     id: "rce_privilege_escalation",
@@ -73,7 +98,12 @@ const ATTACK_PATTERNS = [
     severity: "critical" as const,
     description: "RCE chained with privilege escalation for complete control",
     impact: "Full system compromise with root/admin access",
+    businessImpact: "CRITICAL: Potential Data Breach / Legal Liability",
+    estimatedLossMin: 2000000,
+    estimatedLossMax: 50000000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "HIPAA Breach Notification", "Complete Audit Failure"],
     reasoning: "RCE as a low-privilege user, combined with unpatched privilege escalation vulnerabilities, allows attackers to gain root or admin access to the entire system.",
+    executiveSummary: "Attackers gain complete control of your infrastructure with root access. All systems, data, and backups are compromised. Recovery can take months and costs millions. This is the worst-case scenario.",
   },
   {
     id: "lfi_rce",
@@ -83,7 +113,12 @@ const ATTACK_PATTERNS = [
     severity: "critical" as const,
     description: "LFI vulnerability used to achieve code execution",
     impact: "Remote code execution through file inclusion techniques",
+    businessImpact: "CRITICAL: Potential Data Breach / Legal Liability",
+    estimatedLossMin: 1000000,
+    estimatedLossMax: 8000000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "SOC2 Control Failure", "ISO27001 Violation"],
     reasoning: "LFI can include application log files that contain user input, or writable directories with uploaded files, allowing attackers to poison logs with PHP code and then execute it.",
+    executiveSummary: "Application server is compromised through file manipulation. Attackers can install backdoors, steal data, and maintain persistent access to your systems.",
   },
   {
     id: "ssrf_internal_access",
@@ -93,7 +128,12 @@ const ATTACK_PATTERNS = [
     severity: "high" as const,
     description: "SSRF to access internal services and cloud metadata",
     impact: "Access to internal APIs, databases, and cloud credentials",
+    businessImpact: "HIGH: Service Disruption / Brand Damage",
+    estimatedLossMin: 300000,
+    estimatedLossMax: 3000000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "AWS/Cloud Compliance Violation"],
     reasoning: "SSRF vulnerabilities allow an attacker to make requests to internal services like databases, APIs, or cloud metadata endpoints that aren't accessible from outside.",
+    executiveSummary: "Attackers bypass network defenses to access internal systems and cloud credentials. This leads to lateral movement, data theft, and prolonged operational downtime.",
   },
   {
     id: "broken_auth_data_exposure",
@@ -103,7 +143,12 @@ const ATTACK_PATTERNS = [
     severity: "critical" as const,
     description: "Weak authentication combined with unencrypted data storage",
     impact: "Unauthorized access and bulk data theft",
+    businessImpact: "CRITICAL: Potential Data Breach / Legal Liability",
+    estimatedLossMin: 750000,
+    estimatedLossMax: 7500000,
+    complianceRisks: ["GDPR Non-Compliance Risk", "CCPA Violation", "PCI-DSS Violation"],
     reasoning: "Weak authentication (weak passwords, session handling) combined with unencrypted or improperly encrypted data storage allows attackers to both authenticate and directly access sensitive data.",
+    executiveSummary: "Unencrypted data combined with weak authentication means bulk customer data can be stolen with minimal effort. Breach notification costs and regulatory penalties are inevitable.",
   },
 ];
 
@@ -113,7 +158,6 @@ function calculateSimilarity(str1: string, str2: string): number {
   if (s1 === s2) return 1;
   if (s1.includes(s2) || s2.includes(s1)) return 0.8;
   
-  // Check for keyword matches
   const words1 = s1.split(/[\s_-]+/);
   const words2 = s2.split(/[\s_-]+/);
   const matching = words1.filter(w => words2.some(w2 => w2.includes(w) || w.includes(w2)));
@@ -130,7 +174,7 @@ function matchesPattern(vulns: VulnRecord[], pattern: typeof ATTACK_PATTERNS[0])
     return allText.includes(keywordLower) || calculateSimilarity(allText, keywordLower) > 0.6;
   });
 
-  return matches.length >= 2; // Need at least 2 keyword matches
+  return matches.length >= 2;
 }
 
 function findChains(vulns: VulnRecord[]): AttackChain[] {
@@ -154,7 +198,12 @@ function findChains(vulns: VulnRecord[]): AttackChain[] {
         vulnerabilities: matchingVulns.map(v => v.id),
         description: pattern.description,
         impact: pattern.impact,
+        businessImpact: pattern.businessImpact,
+        estimatedLossMin: pattern.estimatedLossMin,
+        estimatedLossMax: pattern.estimatedLossMax,
+        complianceRisks: pattern.complianceRisks,
         reasoning: generateReasoningForChain(pattern, matchingVulns),
+        executiveSummary: pattern.executiveSummary,
         exploitPath: generateExploitPath(pattern, matchingVulns),
       });
     }
@@ -188,7 +237,7 @@ function generateExploitPath(pattern: typeof ATTACK_PATTERNS[0], vulns: VulnReco
     "ssrf_internal_access":
       "1. Find SSRF vulnerability\n2. Enumerate internal services (localhost:3306, etc)\n3. Access internal APIs and databases\n4. Access cloud metadata endpoint (169.254.169.254)\n5. Extract cloud credentials",
     "broken_auth_data_exposure":
-      "1. Exploit weak authentication to access account\n2. Access unencrypted database with plaintext data\n3. Extract bulk customer data\n4. Steal financial or personal information",
+      "1. Exploit weak authentication to access account\n2. Access unencrypted database with plaintext data\n3. Extract bulk customer data\n4. Sell data on dark web or use for fraud",
   };
 
   return scenarios[pattern.id] || "Multi-stage attack using vulnerability chaining";

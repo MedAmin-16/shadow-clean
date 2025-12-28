@@ -59,6 +59,11 @@ interface AttackChain {
   impact: string;
   reasoning: string;
   exploitPath: string;
+  businessImpact: string;
+  estimatedLossMin: number;
+  estimatedLossMax: number;
+  complianceRisks: string[];
+  executiveSummary: string;
 }
 
 function formatTimestamp(timestamp: string): string {
