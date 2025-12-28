@@ -554,9 +554,40 @@ export class ShadowLogicAgent {
     const mappingStartTime = Date.now();
     let lastUrlDiscoveryTime = Date.now();
     let previousUrlCount = 0;
+    let mappingPhaseComplete = false;
+
+    // CLEANUP HELPER - called when mapping ends (by timeout or success)
+    const completeMappingPhase = (reason: string) => {
+      if (mappingPhaseComplete) return; // Already cleaned up
+      mappingPhaseComplete = true;
+      
+      console.log(`[ShadowLogic:${this.scanId}] MAP CLEANUP: ${reason}`);
+      
+      // Aggressive cleanup - kill all timers and intervals
+      clearTimeout(hardLimitTimeout);
+      if (adaptiveTimeout) clearTimeout(adaptiveTimeout);
+      clearInterval(heartbeatInterval);
+      
+      const elapsedSeconds = Math.floor((Date.now() - mappingStartTime) / 1000);
+      console.log(`[ShadowLogic:${this.scanId}] MAP PHASE ENDED: ${this.discoveredUrls.size} URLs discovered in ${elapsedSeconds}s`);
+      
+      this.addThought("observation", `[Mapping Complete] Discovered ${this.discoveredUrls.size} URLs in ${elapsedSeconds}s`);
+      
+      // FORCE TRANSITION to Testing Phase
+      this.updatePhase("testing");
+      emitToScan?.(this.scanId, "shadowLogic:system", {
+        message: `[PHASE TRANSITION] Moving to Testing Phase - ${this.discoveredUrls.size} URLs to analyze`,
+        status: "active"
+      });
+    };
 
     // Heartbeat interval - send progress every 5 seconds
     const heartbeatInterval = setInterval(() => {
+      if (mappingPhaseComplete) {
+        clearInterval(heartbeatInterval);
+        return;
+      }
+      
       const elapsedSeconds = Math.floor((Date.now() - mappingStartTime) / 1000);
       const urlCount = this.discoveredUrls.size;
       const percentComplete = Math.min(Math.round((elapsedSeconds / 300) * 100), 99);
@@ -567,9 +598,10 @@ export class ShadowLogicAgent {
 
     // Hard limit timeout - stops mapping after 5 minutes regardless
     const hardLimitTimeout = setTimeout(() => {
-      console.warn(`[ShadowLogic:${this.scanId}] MAP: 5-minute hard limit reached (300s)`);
+      console.warn(`[ShadowLogic:${this.scanId}] MAP: 5-minute hard limit reached (300s) - FORCE STOPPING`);
       this.addThought("warning", "[Shadow Logic] Mapping phase reached 5-minute hard limit. Transitioning to Testing Phase.");
       (this as any)._forceStopMapping = true;
+      completeMappingPhase("Hard limit reached (300s)");
     }, MAPPING_HARD_LIMIT);
 
     // Adaptive timeout - stops if no new URLs discovered for 30 seconds (unless at hard limit)
@@ -578,12 +610,15 @@ export class ShadowLogicAgent {
       if (adaptiveTimeout) clearTimeout(adaptiveTimeout);
       lastUrlDiscoveryTime = Date.now();
       adaptiveTimeout = setTimeout(() => {
+        if (mappingPhaseComplete) return;
+        
         const now = Date.now();
         if (this.discoveredUrls.size === previousUrlCount && (now - mappingStartTime) > 10000) {
           const elapsedSeconds = Math.floor((now - mappingStartTime) / 1000);
-          console.warn(`[ShadowLogic:${this.scanId}] MAP: No new URLs for 30s. Transitioning to Testing Phase (${elapsedSeconds}s elapsed)`);
+          console.warn(`[ShadowLogic:${this.scanId}] MAP: No new URLs for 30s - STOPPING (${elapsedSeconds}s elapsed)`);
           this.addThought("warning", `[Shadow Logic] No new URLs discovered for 30 seconds. Stopping mapping (${elapsedSeconds}s elapsed).`);
           (this as any)._forceStopMapping = true;
+          completeMappingPhase(`No new URLs for 30s (elapsed: ${elapsedSeconds}s)`);
         }
       }, NO_NEW_URLS_TIMEOUT);
     };
@@ -611,6 +646,7 @@ export class ShadowLogicAgent {
       
       // Pass the callback to crawlPage so it can notify when URLs are discovered
       await this.crawlPage(this.config.targetUrl, 0, () => {
+        if (mappingPhaseComplete) return;
         // URL discovery callback - reset adaptive timeout when new URLs are found
         if (this.discoveredUrls.size > previousUrlCount) {
           previousUrlCount = this.discoveredUrls.size;
@@ -618,26 +654,20 @@ export class ShadowLogicAgent {
         }
       });
 
-      clearTimeout(hardLimitTimeout);
-      if (adaptiveTimeout) clearTimeout(adaptiveTimeout);
-      clearInterval(heartbeatInterval);
-
-      const elapsedSeconds = Math.floor((Date.now() - mappingStartTime) / 1000);
-      console.log(`[ShadowLogic:${this.scanId}] MAP: Crawl complete. Discovered ${this.discoveredUrls.size} URLs in ${elapsedSeconds}s`);
-
-      if (this.groq) {
-        this.analyzeWithGroq().catch(err => {
-          console.error(`[ShadowLogic:${this.scanId}] Async Groq analysis error:`, err);
-        });
+      // Only complete if not already completed by timeout
+      if (!mappingPhaseComplete) {
+        completeMappingPhase("Crawl finished naturally");
+        
+        if (this.groq) {
+          this.analyzeWithGroq().catch(err => {
+            console.error(`[ShadowLogic:${this.scanId}] Async Groq analysis error:`, err);
+          });
+        }
       }
-
-      emitToScan?.(this.scanId, "shadowLogic:system", {
-        message: `[SUCCESS] Mapping complete - ${this.discoveredUrls.size} URLs discovered in ${elapsedSeconds}s`
-      });
     } catch (error) {
-      clearTimeout(hardLimitTimeout);
-      if (adaptiveTimeout) clearTimeout(adaptiveTimeout);
-      clearInterval(heartbeatInterval);
+      if (!mappingPhaseComplete) {
+        completeMappingPhase(`Error: ${error}`);
+      }
       console.error(`[ShadowLogic:${this.scanId}] MAP FAILED:`, error);
       this.addThought("error", `Mapping failed: ${error}`);
     }
