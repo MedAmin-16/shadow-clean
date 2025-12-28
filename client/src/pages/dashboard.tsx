@@ -18,7 +18,6 @@ import { LiveScanWidget } from "@/components/LiveScanWidget";
 import { VulnerabilityCard } from "@/components/VulnerabilityCard";
 import { ProphetAISection } from "@/components/ProphetAISection";
 import { PlanBadge } from "@/components/PlanBadge";
-import { ScanResultsPage } from "@/components/ScanResultsPage";
 import { UpgradeRequired } from "@/components/UpgradeRequired";
 
 interface DashboardMetrics {
@@ -342,59 +341,6 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
-      </div>
-
-      <CreateProjectDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        onSubmit={(data) => createProjectMutation.mutate(data)}
-      />
-
-      {showTerminal && activeScan && (
-        <div>
-          <h2 className="text-lg font-semibold mb-4">Live Scan Terminal</h2>
-          <LiveTerminal
-            logs={logs}
-            isActive={activeScan.status === "running" && isConnected}
-            planLevel={(user?.planLevel as "STANDARD" | "PRO" | "ELITE") || "STANDARD"}
-            vulnStats={vulnStats}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RecentVulnerabilities
-            vulnerabilities={displayVulnerabilities}
-            onViewAll={() => console.log("View all vulnerabilities")}
-          />
-        </div>
-        <ActivityLog activities={displayActivities} />
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <h2 className="text-lg font-semibold">Your Projects</h2>
-          <button
-            className="text-sm text-primary hover:underline"
-            onClick={() => console.log("View all projects")}
-            data-testid="link-view-all-projects"
-          >
-            View all
-          </button>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {displayProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              {...project}
-              onClick={() => console.log("Project clicked:", project.id)}
-            />
-          ))}
-        </div>
       </div>
 
       <CreateProjectDialog
