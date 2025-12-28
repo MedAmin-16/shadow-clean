@@ -174,15 +174,9 @@ export class ShadowLogicAgent {
       agentLabel: "ShadowLogic"
     });
     
-    // AGGRESSIVE FILTERING: ONLY emit vulnerabilityFound and aiThought events
-    // Suppress ALL observation and discovery events to save bandwidth and CPU
-    const isVulnerability = message.includes('VULNERABILITY') || message.includes('[CONFIRMED]') || message.includes('[POTENTIAL]');
-    const isAiThought = type === 'reasoning' && message.includes('[AI THOUGHT') || message.includes('[Groq]');
-    
-    if (isVulnerability || isAiThought) {
-      if (this.onUpdate) {
-        this.onUpdate(thought);
-      }
+    // Emit for the thoughts API
+    if (this.onUpdate) {
+      this.onUpdate(thought);
     }
   }
   
@@ -383,6 +377,9 @@ export class ShadowLogicAgent {
     this.updatePhase("initializing");
     console.log(`[ShadowLogic:${this.scanId}] INIT: Starting browser initialization`);
     this.addThought("action", "Launching headless browser...");
+    
+    // Ensure we trigger a thought immediately for the terminal
+    this.addThought("reasoning", "[ShadowLogic] Initializing business logic audit engine...");
 
     if (this.isBlockedDomain(this.config.targetUrl)) {
       throw new Error("Target domain is blocked for security reasons");
