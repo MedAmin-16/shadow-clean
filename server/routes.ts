@@ -188,10 +188,13 @@ export async function registerRoutes(
   // ADVANCED FEATURES - Plan Gated Routes
   // =====================================================
   
-  // Feature Access Check (all authenticated users)
-  app.get("/api/features/access", sessionAuth, getFeatureAccess);
+  // WAF Integration Routes (ELITE only)
+  app.post("/api/integrations/save", requireFeature("waf_automation"), saveIntegration);
+  app.post("/api/integrations/test", requireFeature("waf_automation"), testIntegration);
+  app.delete("/api/integrations/:id", requireFeature("waf_automation"), deleteIntegration);
+  app.get("/api/integrations", sessionAuth, getIntegrations);
 
-  // Threat Intelligence (ELITE only)
+  return httpServer;
   app.get("/api/threat-intel/search", requireFeature("ai_threat_intel"), searchThreatIntel);
   app.get("/api/threat-intel/shodan/:target", requireFeature("ai_threat_intel"), searchShodanTarget);
 

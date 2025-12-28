@@ -503,7 +503,8 @@ export type FeatureId =
   | "phishing_simulation"
   | "rl_exploiter"
   | "autonomous_defense"
-  | "shadow_logic";
+  | "shadow_logic"
+  | "waf_automation";
 
 export type GatedAgentId = "recon" | "scanner" | "exploiter" | "reporter" | "prophet" | "rl_exploiter" | "autonomous_defense" | "shadow_logic";
 
@@ -538,6 +539,7 @@ export const PLAN_FEATURE_CONFIGS: Record<PlanLevel, PlanFeatureConfig> = {
       "rl_exploiter",
       "autonomous_defense",
       "shadow_logic",
+      "waf_automation",
     ],
     monitoringFrequency: "daily",
     maxScansPerMonth: -1,
@@ -563,6 +565,7 @@ export const PLAN_FEATURE_CONFIGS: Record<PlanLevel, PlanFeatureConfig> = {
       "rl_exploiter",
       "autonomous_defense",
       "shadow_logic",
+      "waf_automation",
     ],
     monitoringFrequency: "daily",
     maxScansPerMonth: -1,

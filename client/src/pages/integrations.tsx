@@ -21,7 +21,16 @@ import {
   EyeOff,
   AlertTriangle,
   Zap,
+  Diamond,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 interface IntegrationStatus {
   id: string;
@@ -47,6 +56,7 @@ export default function IntegrationsPage() {
   const [awsSecretKey, setAwsSecretKey] = useState("");
   const [awsRegion, setAwsRegion] = useState("us-east-1");
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
 
   const { data: integrations, isLoading } = useQuery<IntegrationsData>({
     queryKey: ["/api/integrations"],
@@ -151,8 +161,55 @@ export default function IntegrationsPage() {
 
   const isElite = integrations?.planLevel === "ELITE";
 
+  const WafCardWrapper = ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <div className="relative group">
+      {!isElite && (
+        <div 
+          className="absolute inset-0 z-10 cursor-pointer flex items-center justify-center bg-black/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" 
+          onClick={() => setUpgradeDialogOpen(true)}
+        >
+          <div className="bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-xl shadow-purple-500/20">
+            <Diamond className="h-4 w-4" />
+            <span className="font-bold text-sm">ELITE ONLY</span>
+          </div>
+        </div>
+      )}
+      <div className={!isElite ? "filter blur-[1px] grayscale pointer-events-none" : ""}>
+        {children}
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-4xl" data-testid="page-integrations">
+      <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-black/95 border-purple-500/30">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2 text-purple-400">
+              <Diamond className="h-6 w-6" />
+              Upgrade to Elite
+            </DialogTitle>
+            <DialogDescription className="text-lg pt-4 text-gray-300 leading-relaxed">
+              Automate your security with WAF Hotfixes. Upgrade to Elite Pack to connect 
+              <strong> Cloudflare</strong>, <strong>AWS</strong>, or <strong>Akamai</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+              <h4 className="font-semibold text-purple-300 mb-2">Why Elite?</h4>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Instant exploit blocking via Cloudflare/AWS API</li>
+                <li>• Automated rule generation from scan findings</li>
+                <li>• Zero-day hotfix deployment</li>
+              </ul>
+            </div>
+            <Button className="w-full bg-purple-600 hover:bg-purple-700 h-12 text-lg font-bold" onClick={() => setUpgradeDialogOpen(false)}>
+              Upgrade Now
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div>
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Key className="h-6 w-6 text-primary" />
@@ -163,210 +220,172 @@ export default function IntegrationsPage() {
         </p>
       </div>
 
-      {!isElite && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            WAF integrations require an <strong>ELITE</strong> tier subscription. Upgrade to enable
-            automated hotfix deployment to your security infrastructure.
-          </AlertDescription>
-        </Alert>
-      )}
-
       <div className="grid gap-6">
-        <Card className={!isElite ? "opacity-60 pointer-events-none" : ""}>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
-                  <Cloud className="h-6 w-6 text-orange-600" />
+        <WafCardWrapper>
+          <Card className="border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-transparent">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg shadow-lg">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/9/94/Cloudflare_Logo.png" alt="Cloudflare" className="h-6 object-contain" />
+                  </div>
+                  <div>
+                    <CardTitle>Cloudflare WAF</CardTitle>
+                    <CardDescription>Automated WAF rule deployment to Cloudflare Edge</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle>Cloudflare WAF</CardTitle>
-                  <CardDescription>Automated WAF rule deployment to Cloudflare</CardDescription>
-                </div>
+                {isElite && (cloudflareStatus?.connected ? (
+                  <Badge className="bg-green-500">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Connected
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    Not Connected
+                  </Badge>
+                ))}
               </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {cloudflareStatus?.connected ? (
-                <Badge className="bg-green-500">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Connected
-                </Badge>
-              ) : (
-                <Badge variant="secondary">
-                  <XCircle className="h-3 w-3 mr-1" />
-                  Not Connected
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {cloudflareStatus?.connected ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-950 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    <span className="font-medium">Integration Active</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => testIntegrationMutation.mutate("cloudflare_waf")}
-                      disabled={testingIntegration === "cloudflare_waf"}
-                    >
-                      {testingIntegration === "cloudflare_waf" ? (
-                        <RefreshCw className="h-4 w-4 animate-spin mr-1" />
-                      ) : (
-                        <Zap className="h-4 w-4 mr-1" />
-                      )}
-                      Test Connection
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => deleteIntegrationMutation.mutate("cloudflare_waf")}
-                    >
-                      Disconnect
-                    </Button>
-                  </div>
-                </div>
-                {cloudflareStatus.lastTested && (
-                  <p className="text-sm text-muted-foreground">
-                    Last tested: {new Date(cloudflareStatus.lastTested).toLocaleString()}
-                    {cloudflareStatus.testResult && (
-                      <Badge
-                        variant={cloudflareStatus.testResult === "success" ? "default" : "destructive"}
-                        className="ml-2"
-                      >
-                        {cloudflareStatus.testResult}
-                      </Badge>
-                    )}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="cf-api-key">API Token</Label>
-                    <div className="relative">
-                      <Input
-                        id="cf-api-key"
-                        type={showCloudflareKey ? "text" : "password"}
-                        placeholder="Enter your Cloudflare API token"
-                        value={cloudflareApiKey}
-                        onChange={(e) => setCloudflareApiKey(e.target.value)}
-                      />
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-950 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <span className="font-medium">Integration Active</span>
+                    </div>
+                    <div className="flex gap-2">
                       <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0"
-                        onClick={() => setShowCloudflareKey(!showCloudflareKey)}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => testIntegrationMutation.mutate("cloudflare_waf")}
+                        disabled={testingIntegration === "cloudflare_waf"}
                       >
-                        {showCloudflareKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {testingIntegration === "cloudflare_waf" ? (
+                          <RefreshCw className="h-4 w-4 animate-spin mr-1" />
+                        ) : (
+                          <Zap className="h-4 w-4 mr-1" />
+                        )}
+                        Test Connection
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => deleteIntegrationMutation.mutate("cloudflare_waf")}
+                      >
+                        Disconnect
                       </Button>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cf-zone-id">Zone ID</Label>
-                    <Input
-                      id="cf-zone-id"
-                      placeholder="Your Cloudflare Zone ID"
-                      value={cloudflareZoneId}
-                      onChange={(e) => setCloudflareZoneId(e.target.value)}
-                    />
-                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Lock className="h-4 w-4" />
-                  Your API keys are encrypted and stored securely
-                </div>
-                <Button onClick={handleSaveCloudflare} disabled={saveIntegrationMutation.isPending}>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Save & Connect
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className={!isElite ? "opacity-60 pointer-events-none" : ""}>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
-                  <Cloud className="h-6 w-6 text-yellow-600" />
-                </div>
-                <div>
-                  <CardTitle>AWS WAF</CardTitle>
-                  <CardDescription>Automated rule deployment to AWS Web Application Firewall</CardDescription>
-                </div>
-              </div>
-              {awsStatus?.connected ? (
-                <Badge className="bg-green-500">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Connected
-                </Badge>
               ) : (
-                <Badge variant="secondary">
-                  <XCircle className="h-3 w-3 mr-1" />
-                  Not Connected
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {awsStatus?.connected ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-950 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    <span className="font-medium">Integration Active</span>
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="cf-api-key">API Token</Label>
+                      <div className="relative">
+                        <Input
+                          id="cf-api-key"
+                          type={showCloudflareKey ? "text" : "password"}
+                          placeholder="Enter your Cloudflare API token"
+                          value={cloudflareApiKey}
+                          onChange={(e) => setCloudflareApiKey(e.target.value)}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0"
+                          onClick={() => setShowCloudflareKey(!showCloudflareKey)}
+                        >
+                          {showCloudflareKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cf-zone-id">Zone ID</Label>
+                      <Input
+                        id="cf-zone-id"
+                        placeholder="Your Cloudflare Zone ID"
+                        value={cloudflareZoneId}
+                        onChange={(e) => setCloudflareZoneId(e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => testIntegrationMutation.mutate("aws_waf")}
-                      disabled={testingIntegration === "aws_waf"}
-                    >
-                      {testingIntegration === "aws_waf" ? (
-                        <RefreshCw className="h-4 w-4 animate-spin mr-1" />
-                      ) : (
-                        <Zap className="h-4 w-4 mr-1" />
-                      )}
-                      Test Connection
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => deleteIntegrationMutation.mutate("aws_waf")}
-                    >
-                      Disconnect
-                    </Button>
+                  <Button onClick={handleSaveCloudflare} disabled={saveIntegrationMutation.isPending}>
+                    <Shield className="h-4 w-4 mr-2" />
+                    Save & Connect
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </WafCardWrapper>
+
+        <WafCardWrapper>
+          <Card className="border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-transparent">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg shadow-lg">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg" alt="AWS" className="h-6 object-contain" />
+                  </div>
+                  <div>
+                    <CardTitle>AWS WAF</CardTitle>
+                    <CardDescription>Automated rule deployment to AWS Web Application Firewall</CardDescription>
                   </div>
                 </div>
-                {awsStatus.lastTested && (
-                  <p className="text-sm text-muted-foreground">
-                    Last tested: {new Date(awsStatus.lastTested).toLocaleString()}
-                    {awsStatus.testResult && (
-                      <Badge
-                        variant={awsStatus.testResult === "success" ? "default" : "destructive"}
-                        className="ml-2"
-                      >
-                        {awsStatus.testResult}
-                      </Badge>
-                    )}
-                  </p>
-                )}
+                {isElite && (awsStatus?.connected ? (
+                  <Badge className="bg-green-500">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Connected
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    Not Connected
+                  </Badge>
+                ))}
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="aws-access-key">Access Key ID</Label>
-                    <div className="relative">
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {awsStatus?.connected ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-950 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <span className="font-medium">Integration Active</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => testIntegrationMutation.mutate("aws_waf")}
+                        disabled={testingIntegration === "aws_waf"}
+                      >
+                        {testingIntegration === "aws_waf" ? (
+                          <RefreshCw className="h-4 w-4 animate-spin mr-1" />
+                        ) : (
+                          <Zap className="h-4 w-4 mr-1" />
+                        )}
+                        Test Connection
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => deleteIntegrationMutation.mutate("aws_waf")}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="aws-access-key">Access Key ID</Label>
                       <Input
                         id="aws-access-key"
                         type={showAwsKey ? "text" : "password"}
@@ -375,93 +394,70 @@ export default function IntegrationsPage() {
                         onChange={(e) => setAwsAccessKey(e.target.value)}
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="aws-secret-key">Secret Access Key</Label>
-                    <div className="relative">
+                    <div className="space-y-2">
+                      <Label htmlFor="aws-secret-key">Secret Access Key</Label>
+                      <div className="relative">
+                        <Input
+                          id="aws-secret-key"
+                          type={showAwsKey ? "text" : "password"}
+                          placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                          value={awsSecretKey}
+                          onChange={(e) => setAwsSecretKey(e.target.value)}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0"
+                          onClick={() => setShowAwsKey(!showAwsKey)}
+                        >
+                          {showAwsKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="aws-region">Region</Label>
                       <Input
-                        id="aws-secret-key"
-                        type={showAwsKey ? "text" : "password"}
-                        placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                        value={awsSecretKey}
-                        onChange={(e) => setAwsSecretKey(e.target.value)}
+                        id="aws-region"
+                        placeholder="us-east-1"
+                        value={awsRegion}
+                        onChange={(e) => setAwsRegion(e.target.value)}
                       />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0"
-                        onClick={() => setShowAwsKey(!showAwsKey)}
-                      >
-                        {showAwsKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="aws-region">Region</Label>
-                    <Input
-                      id="aws-region"
-                      placeholder="us-east-1"
-                      value={awsRegion}
-                      onChange={(e) => setAwsRegion(e.target.value)}
-                    />
-                  </div>
+                  <Button onClick={handleSaveAws} disabled={saveIntegrationMutation.isPending}>
+                    <Shield className="h-4 w-4 mr-2" />
+                    Save & Connect
+                  </Button>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Lock className="h-4 w-4" />
-                  Your API keys are encrypted and stored securely
-                </div>
-                <Button onClick={handleSaveAws} disabled={saveIntegrationMutation.isPending}>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Save & Connect
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </WafCardWrapper>
       </div>
 
       <Separator />
 
-      <Card>
+      <Card className="bg-gradient-to-r from-blue-900/10 to-purple-900/10 border-blue-500/20">
         <CardHeader>
-          <CardTitle>How Integrations Work</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-blue-400" />
+            Elite Automated Response Workflow
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-blue-100 dark:bg-blue-900 rounded">
-                  <span className="text-sm font-bold text-blue-600">1</span>
-                </div>
-                <span className="font-medium">Scan Completes</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Agent 7 identifies critical vulnerabilities requiring immediate protection
-              </p>
+          <div className="grid gap-4 md:grid-cols-3 text-center">
+            <div className="p-4 bg-black/20 rounded-lg border border-blue-500/10">
+              <div className="text-2xl font-bold text-blue-400 mb-1">Detect</div>
+              <p className="text-xs text-gray-400">Agent identifies critical injection or auth flaw</p>
             </div>
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-blue-100 dark:bg-blue-900 rounded">
-                  <span className="text-sm font-bold text-blue-600">2</span>
-                </div>
-                <span className="font-medium">Rules Generated</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                ShadowTwin generates platform-specific WAF rules to block exploit attempts
-              </p>
+            <div className="p-4 bg-black/20 rounded-lg border border-blue-500/10">
+              <div className="text-2xl font-bold text-purple-400 mb-1">Analyze</div>
+              <p className="text-xs text-gray-400">AI generates optimized payload blocking rules</p>
             </div>
-            <div className="p-4 border rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-blue-100 dark:bg-blue-900 rounded">
-                  <span className="text-sm font-bold text-blue-600">3</span>
-                </div>
-                <span className="font-medium">Auto-Deploy</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Rules are automatically pushed to your WAF via API (or provided as copy-paste if not
-                connected)
-              </p>
+            <div className="p-4 bg-black/20 rounded-lg border border-blue-500/10">
+              <div className="text-2xl font-bold text-cyan-400 mb-1">Protect</div>
+              <p className="text-xs text-gray-400">Rules are instantly pushed to Cloudflare/AWS edge</p>
             </div>
           </div>
         </CardContent>
