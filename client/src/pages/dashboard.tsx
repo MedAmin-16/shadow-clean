@@ -283,7 +283,7 @@ export default function DashboardPage() {
       {/* AI Attack Chains (PRO and ELITE only) */}
       {(user?.planLevel === "PRO" || user?.planLevel === "ELITE") && completedScan && (
         <div className="space-y-4">
-          <AttackChainsCard chains={attackChains} isLoading={false} />
+          <AttackChainsCard chains={attackChains} isLoading={false} scanId={completedScan.id} />
         </div>
       )}
 

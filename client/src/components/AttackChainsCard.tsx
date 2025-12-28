@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, ChevronDown, Link2, AlertCircle, DollarSign, Scale } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, ChevronDown, Link2, AlertCircle, DollarSign, Scale, Download } from "lucide-react";
 import { useState } from "react";
 
 interface AttackChain {
@@ -22,6 +23,7 @@ interface AttackChain {
 interface AttackChainsCardProps {
   chains: AttackChain[];
   isLoading?: boolean;
+  scanId?: string;
 }
 
 const severityColors = {
@@ -51,8 +53,39 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function AttackChainsCard({ chains, isLoading = false }: AttackChainsCardProps) {
+export function AttackChainsCard({ chains, isLoading = false, scanId }: AttackChainsCardProps) {
   const [expandedChain, setExpandedChain] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportReport = async () => {
+    if (!scanId) return;
+    
+    try {
+      setIsExporting(true);
+      const response = await fetch(`/api/executive-report/${scanId}`, {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate report");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `executive-risk-report-${scanId.substring(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error exporting report:", error);
+      alert("Failed to export report. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -94,24 +127,37 @@ export function AttackChainsCard({ chains, isLoading = false }: AttackChainsCard
 
   return (
     <Card className="border-red-300 bg-red-50">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-red-900">
-          <AlertTriangle className="w-5 h-5 text-red-600" />
-          Enterprise Risk Management: Vulnerability Chains
-        </CardTitle>
-        <CardDescription className="text-red-800">
-          {chains.length} critical vulnerability chains identified
-          {criticalCount > 0 && (
-            <span className="ml-3 font-semibold text-red-700">
-              {criticalCount} CRITICAL
-            </span>
-          )}
-          {highCount > 0 && (
-            <span className="ml-3 font-semibold text-orange-700">
-              {highCount} HIGH
-            </span>
-          )}
-        </CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-red-900">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+            Enterprise Risk Management: Vulnerability Chains
+          </CardTitle>
+          <CardDescription className="text-red-800 mt-2">
+            {chains.length} critical vulnerability chains identified
+            {criticalCount > 0 && (
+              <span className="ml-3 font-semibold text-red-700">
+                {criticalCount} CRITICAL
+              </span>
+            )}
+            {highCount > 0 && (
+              <span className="ml-3 font-semibold text-orange-700">
+                {highCount} HIGH
+              </span>
+            )}
+          </CardDescription>
+        </div>
+        {scanId && (
+          <Button
+            onClick={handleExportReport}
+            disabled={isExporting}
+            className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 whitespace-nowrap"
+            size="sm"
+          >
+            <Download className="w-4 h-4" />
+            {isExporting ? "Exporting..." : "Export Report"}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Financial Impact Summary */}

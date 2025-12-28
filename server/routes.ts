@@ -55,6 +55,7 @@ import {
   getAttackChains,
   correlateVulnerabilities,
 } from "./src/controllers/attackChainerController";
+import { generateExecutiveReport } from "./src/controllers/executiveReportController";
 import {
   adminLogin,
   verifyAdmin,
@@ -300,6 +301,9 @@ export async function registerRoutes(
   // AI Attack Chainer (PRO and ELITE)
   app.get("/api/attack-chains/:scanId", requireFeature("visual_attack_path"), getAttackChains);
   app.post("/api/attack-chains/correlate", requireFeature("visual_attack_path"), correlateVulnerabilities);
+
+  // Executive Risk Report (ELITE only)
+  app.get("/api/executive-report/:scanId", requireMinPlan("ELITE"), generateExecutiveReport);
 
   // Continuous Monitoring (PRO: weekly, ELITE: daily)
   app.post("/api/monitoring/schedules", requireFeature("weekly_monitoring"), createMonitoringSchedule);

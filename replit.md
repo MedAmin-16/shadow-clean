@@ -79,7 +79,38 @@ ShadowTwin is an advanced security platform designed for enterprise clients (CTO
 - **Real-time**: WebSocket for live scan streaming
 - **LLM Integration**: OpenAI GPT-4o, Groq
 
+## Executive Risk Report Feature (Dec 28, 2025)
+
+### One-Click PDF Export for C-Suite
+- **Status**: ✅ Complete
+- **Plan Access**: ELITE only
+- **Files Created**:
+  - `server/src/services/executiveReportService.ts` - PDF generation
+  - `server/src/controllers/executiveReportController.ts` - API endpoint
+  - UI Integration in AttackChainsCard component
+
+### PDF Report Contents:
+1. **Executive Summary** - Business impact of vulnerability chains
+2. **Financial Exposure** - Total estimated loss range ($XXX,XXX - $X,XXX,XXX)
+3. **Regulatory Gaps** - Compliance violations (GDPR, CCPA, PCI-DSS, HIPAA, SOC2, ISO27001)
+4. **Critical Risk Factors** - Top 3 chains with business-focused explanations
+5. **Recommended Actions** - Board-level action items
+6. **Professional Design** - One-page, confidential, Board-ready format
+
+### API Endpoint:
+- `GET /api/executive-report/:scanId` - Generate & download PDF (ELITE only)
+
+### Features:
+- ✅ Instant PDF generation (no external services)
+- ✅ Beautiful professional formatting (PDFKit)
+- ✅ Zero technical jargon (business language)
+- ✅ One-click download from dashboard
+- ✅ ELITE plan gating via requireMinPlan middleware
+- ✅ Automatic financial loss calculation
+- ✅ Compliance gap summary
+
 ## Current Build Status
 ✅ Build passes successfully
 ✅ All features compiled and deployed
-✅ Ready for testing
+✅ Executive Report feature complete
+✅ Ready for production
