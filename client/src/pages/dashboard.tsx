@@ -95,9 +95,9 @@ export default function DashboardPage() {
   const [selectedVulnerability, setSelectedVulnerability] = useState<Vulnerability | null>(null);
   const [vulnModalOpen, setVulnModalOpen] = useState(false);
 
-  const { data: user } = useQuery<UserData & { planLevel?: string }>({
+  const { data: user } = useQuery<UserData>({
     queryKey: ["/api/user/me"],
-  });
+  }) as { data: UserData };
 
   const stopScanMutation = useMutation({
     mutationFn: async (scanId: string) => {

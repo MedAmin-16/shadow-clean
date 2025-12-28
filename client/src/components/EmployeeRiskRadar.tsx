@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -112,7 +112,7 @@ export function EmployeeRiskRadar() {
                 <p className="text-xs text-purple-400 font-medium uppercase tracking-wider mb-1">Human Factor Risk</p>
                 <p className={`text-3xl font-bold ${getRiskColor(radarData.riskScore)}`}>{radarData.riskScore}%</p>
                 <div className="mt-2 h-1 w-full bg-black/30 rounded-full overflow-hidden">
-                  <div className={`h-full ${radarData.riskScore > 50 ? 'bg-red-500' : 'bg-green-500'}`} style={ { width: `${radarData.riskScore}%` } }></div>
+                  <div className={`h-full ${radarData.riskScore > 50 ? 'bg-red-500' : 'bg-green-500'}`} style={ { width: `${radarData.riskScore}%` } as React.CSSProperties }></div>
                 </div>
               </div>
               <div className="p-4 rounded-lg bg-purple-500/5 border border-purple-500/10">

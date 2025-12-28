@@ -185,7 +185,7 @@ export async function generateComplianceReport(req: PlanGatedRequest, res: Respo
       return res.status(404).json({ success: false, error: "Scan not found" });
     }
 
-    const scannerData = scan.agentResults?.scanner?.data as any;
+    const scannerData = (scan.agentResults as any)?.scanner?.data as any;
     if (!scannerData) {
       return res.status(400).json({ success: false, error: "Scan has no scanner data" });
     }
@@ -227,8 +227,8 @@ export async function generateAttackPath(req: PlanGatedRequest, res: Response) {
       return res.status(404).json({ success: false, error: "Scan not found" });
     }
 
-    const scannerData = scan.agentResults?.scanner?.data as any;
-    const exploiterData = scan.agentResults?.exploiter?.data as any;
+    const scannerData = (scan.agentResults as any)?.scanner?.data as any;
+    const exploiterData = (scan.agentResults as any)?.exploiter?.data as any;
 
     if (!scannerData) {
       return res.status(400).json({ success: false, error: "Scan has no scanner data" });
