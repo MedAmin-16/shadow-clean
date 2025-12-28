@@ -193,7 +193,7 @@ export async function generateExecutiveReport(data: ExecutiveReportData): Promis
       // Watermark
       doc.fontSize(7).fillColor("#999999").text("🔐 ShadowTwin Verified Exploit - Forensically Proven", {
         align: "center",
-        font: "Helvetica-Oblique"
+        oblique: true
       });
       doc.fillColor("#000000").moveDown(0.5);
     });

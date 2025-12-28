@@ -127,7 +127,11 @@ export class ShadowLogicAgent {
     };
 
     if (process.env.GROQ_API_KEY) {
-      this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+      this.groq = new Groq({ 
+        apiKey: process.env.GROQ_API_KEY,
+        maxRetries: 3,
+        timeout: 20000 
+      });
     }
   }
 
