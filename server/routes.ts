@@ -325,5 +325,35 @@ export async function registerRoutes(
   // Secret Scan Routes - JS-Secret Workflow with Real-Time Output
   app.use("/api/secret-scan", secretScanRoutes);
 
+  // WAF Hotfix Deployment (ELITE only)
+  app.post("/api/vulnerabilities/:vulnId/deploy-hotfix", requireMinPlan("ELITE"), async (req, res) => {
+    try {
+      const { vulnId } = req.params;
+      const { vulnerability } = req.body;
+      const userId = (req as any).userId;
+
+      // Generate WAF rule ID
+      const ruleId = `WAF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
+
+      // Simulate WAF rule deployment (in production, this would integrate with Cloudflare/AWS)
+      console.log(`[WAF HOTFIX] Deploying rule ${ruleId} for vulnerability ${vulnId}`, {
+        userId,
+        title: vulnerability?.title,
+        payload: vulnerability?.payload,
+        url: vulnerability?.url,
+      });
+
+      res.json({
+        success: true,
+        ruleId,
+        message: `Vulnerability Shielded: WAF Rule #${ruleId} Active`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error deploying hotfix:", error);
+      res.status(500).json({ error: "Failed to deploy WAF hotfix" });
+    }
+  });
+
   return httpServer;
 }

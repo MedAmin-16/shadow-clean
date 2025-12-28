@@ -19,6 +19,7 @@ import { VulnerabilityCard } from "@/components/VulnerabilityCard";
 import { ProphetAISection } from "@/components/ProphetAISection";
 import { PlanBadge } from "@/components/PlanBadge";
 import { UpgradeRequired } from "@/components/UpgradeRequired";
+import { VulnerabilityDetailsModal } from "@/components/VulnerabilityDetailsModal";
 
 interface DashboardMetrics {
   securityScore: number;
@@ -36,6 +37,7 @@ interface Vulnerability {
   severity: "critical" | "high" | "medium" | "low" | "info";
   project: string;
   date: string;
+  timestamp?: string;
   cvss?: number;
   url?: string;
   payload?: string;
@@ -43,6 +45,8 @@ interface Vulnerability {
   remediationCode?: string;
   description?: string;
   tool?: string;
+  wafShielded?: boolean;
+  wafRuleId?: string;
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -70,6 +74,8 @@ export default function DashboardPage() {
   const [terminalScanId, setTerminalScanId] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(true);
   const [showProphetAnalysis, setShowProphetAnalysis] = useState(true);
+  const [selectedVulnerability, setSelectedVulnerability] = useState<Vulnerability | null>(null);
+  const [vulnModalOpen, setVulnModalOpen] = useState(false);
 
   const { data: user } = useQuery<UserData & { planLevel?: string }>({
     queryKey: ["/api/user/me"],
@@ -165,6 +171,8 @@ export default function DashboardPage() {
     description: v.description,
     tool: v.tool,
     timestamp: v.date,
+    wafShielded: v.wafShielded,
+    wafRuleId: v.wafRuleId,
   }));
 
   return (
@@ -256,15 +264,21 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {displayVulnerabilities.map((v) => (
+            {vulnerabilities.map((v) => (
               <VulnerabilityCard
                 key={v.id}
+                id={v.id}
                 title={v.title}
                 severity={v.severity}
                 tool={v.tool || "Scanner"}
                 url={v.url || "N/A"}
                 details={v.description || "No details provided"}
-                timestamp={formatTimestamp(v.timestamp)}
+                timestamp={formatTimestamp(v.date)}
+                wafShielded={v.wafShielded || false}
+                onClick={() => {
+                  setSelectedVulnerability(v);
+                  setVulnModalOpen(true);
+                }}
               />
             ))}
           </div>
@@ -347,6 +361,19 @@ export default function DashboardPage() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onSubmit={(data) => createProjectMutation.mutate(data)}
+      />
+
+      <VulnerabilityDetailsModal
+        open={vulnModalOpen}
+        onOpenChange={setVulnModalOpen}
+        vulnerability={selectedVulnerability}
+        isElite={user?.planLevel === "ELITE"}
+        onShielded={(vulnId, ruleId) => {
+          setSelectedVulnerability(prev => 
+            prev ? { ...prev, wafShielded: true, wafRuleId: ruleId } : null
+          );
+          queryClient.invalidateQueries({ queryKey: ["/api/dashboard/vulnerabilities"] });
+        }}
       />
 
       {showTerminal && activeScan && (
