@@ -290,13 +290,13 @@ export default function DashboardPage() {
       )}
 
       {/* Shadow Logic AI Terminal (ELITE only) */}
-      {user?.planLevel === "ELITE" && (
+      {user?.planLevel === "ELITE" && completedScan && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Brain className="h-5 w-5 text-amber-500" />
             Shadow Logic Neural Stream
           </h2>
-          <ShadowLogicTerminal scanId={activeScan?.id || completedScan?.id} />
+          <ShadowLogicTerminal thoughts={[]} isActive={false} />
         </div>
       )}
 

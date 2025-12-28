@@ -479,7 +479,8 @@ export default function ShadowLogicPage() {
           </div>
 
           <ShadowLogicTerminal
-            scanId={activeScanId || undefined}
+            thoughts={thoughts}
+            isActive={!!activeScanId}
           />
         </TabsContent>
 
