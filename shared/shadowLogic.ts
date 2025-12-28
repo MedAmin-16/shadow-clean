@@ -56,6 +56,29 @@ export interface BusinessFlow {
   criticalNodes: string[];
 }
 
+export interface HackerProof {
+  step1_normalRequest: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+  };
+  step2_maliciousManipulation: {
+    description: string;
+    modifiedParameter: string;
+    originalValue: string;
+    injectedValue: string;
+  };
+  step3_unexpectedResponse: {
+    statusCode: number;
+    responseHeaders: Record<string, string>;
+    responseBody: string;
+    proofIndicator: string;
+  };
+  whyItWorked: string;
+  exploitSeverity: "instant_compromise" | "confirmed_bypass" | "likely_vulnerable";
+}
+
 export interface BusinessLogicVulnerability {
   id: string;
   type: ShadowLogicTestType;
@@ -75,6 +98,9 @@ export interface BusinessLogicVulnerability {
   remediation: string;
   cweId?: string;
   cvssScore?: number;
+  hackerProof?: HackerProof;
+  verifiedExploit: boolean;
+  watermark?: string;
 }
 
 export interface ShadowLogicScanConfig {

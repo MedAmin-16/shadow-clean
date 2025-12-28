@@ -4,12 +4,13 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { ShadowLogicThought, ThoughtType } from "@shared/shadowLogic";
-import { Crown, Cpu, Zap } from "lucide-react";
+import { Crown, Cpu, Zap, ChevronDown } from "lucide-react";
 
 interface ShadowLogicTerminalProps {
   thoughts: ShadowLogicThought[];
   isActive: boolean;
   className?: string;
+  evidences?: any[];
 }
 
 const thoughtStyles: Record<ThoughtType, { icon: string; color: string; bgColor: string; glowColor: string }> = {
@@ -22,9 +23,10 @@ const thoughtStyles: Record<ThoughtType, { icon: string; color: string; bgColor:
   error: { icon: "❌", color: "text-red-400", bgColor: "bg-red-500/15", glowColor: "shadow-red-500/30" },
 };
 
-export function ShadowLogicTerminal({ thoughts, isActive, className }: ShadowLogicTerminalProps) {
+export function ShadowLogicTerminal({ thoughts, isActive, className, evidences = [] }: ShadowLogicTerminalProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
   
   // Memory management: Keep only the last 500 logs to prevent UI crashes
   const filteredThoughts = thoughts.slice(-500);
@@ -116,6 +118,34 @@ export function ShadowLogicTerminal({ thoughts, isActive, className }: ShadowLog
                 {thoughts.length > 500 && (
                   <div className="text-orange-600 text-xs italic px-2 py-1 rounded bg-orange-950/40 border border-orange-700/30 font-mono">
                     ⚠ Showing last 500 events ({thoughts.length - 500} older logs hidden)
+                  </div>
+                )}
+                {evidences.length > 0 && (
+                  <div className="mb-4 p-2.5 rounded border bg-red-950/30 border-red-700/40">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">🔐</span>
+                      <span className="font-bold text-red-400 text-xs uppercase">[VERIFIED EXPLOITS]</span>
+                      <Badge className="bg-red-600/30 text-red-300 text-xs">{evidences.length} proof(s)</Badge>
+                    </div>
+                    {evidences.map((ev: any, i) => (
+                      <div key={i} className="mb-2 text-xs text-amber-100">
+                        <button
+                          onClick={() => setExpandedEvidence(expandedEvidence === `ev${i}` ? null : `ev${i}`)}
+                          className="flex items-center gap-2 w-full text-left hover:text-amber-300 p-1"
+                        >
+                          <ChevronDown className={cn("w-3 h-3 transition-transform", expandedEvidence === `ev${i}` && "rotate-180")} />
+                          <span className="font-mono">► Step 1-3 PoC: {ev.title?.substring(0, 50)}</span>
+                        </button>
+                        {expandedEvidence === `ev${i}` && (
+                          <div className="ml-4 mt-1 p-2 bg-amber-950/20 rounded border border-amber-800/20 text-amber-100 font-mono text-xs max-h-48 overflow-y-auto">
+                            <p><strong>Step 2 Injection:</strong> {ev.injection}</p>
+                            <p className="mt-1"><strong>Step 3 Result:</strong> {ev.result}</p>
+                            <p className="mt-1 text-amber-400"><strong>Why:</strong> {ev.whyItWorked?.substring(0, 80)}</p>
+                            <p className="mt-2 text-red-400 font-bold">🔐 ShadowTwin Verified Exploit</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
                 {filteredThoughts.map((thought) => {
