@@ -21,6 +21,7 @@ import { PlanBadge } from "@/components/PlanBadge";
 import { UpgradeRequired } from "@/components/UpgradeRequired";
 import { VulnerabilityDetailsModal } from "@/components/VulnerabilityDetailsModal";
 import { AttackChainsCard } from "@/components/AttackChainsCard";
+import { EmployeeRiskRadar } from "@/components/EmployeeRiskRadar";
 
 interface DashboardMetrics {
   securityScore: number;
@@ -284,6 +285,13 @@ export default function DashboardPage() {
       {(user?.planLevel === "PRO" || user?.planLevel === "ELITE") && completedScan && (
         <div className="space-y-4">
           <AttackChainsCard chains={attackChains} isLoading={false} scanId={completedScan.id} />
+        </div>
+      )}
+
+      {/* Employee Risk Radar (ELITE only) */}
+      {user?.planLevel === "ELITE" && (
+        <div className="space-y-4">
+          <EmployeeRiskRadar />
         </div>
       )}
 

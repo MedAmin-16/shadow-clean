@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 export class EmployeeRiskRadarService {
   async performRadarScan(userId: string, targetDomain: string) {
-    logger.info(`Starting Employee Risk Radar scan for ${targetDomain}`);
+    console.log(`Starting Employee Risk Radar scan for ${targetDomain}`);
     
     // Create scan record
     const [radarScan] = await db.insert(employeeRiskRadarTable).values({
