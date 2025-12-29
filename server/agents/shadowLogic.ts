@@ -1086,13 +1086,14 @@ JSON format:
     for (const target of targets.slice(0, 20)) { // Limit for speed
       if ((this as any)._forceStopMapping) break;
       
-      this.addThought("action", `[ATTACK] Probing ${target.param} at ${new URL(target.url).pathname}`);
+      this.addThought("action", `[SQLi Test] Probing parameter '${target.param}' at ${new URL(target.url).pathname} for SQL Injection vulnerability...`);
       
       // Test SQLi (First 2 payloads)
       for (const payload of this.SQLI_PAYLOADS.slice(0, 2)) {
         await this.testPayload(new URL(target.url), target.param, payload, "sqli");
       }
       
+      this.addThought("action", `[XSS Test] Probing parameter '${target.param}' at ${new URL(target.url).pathname} for Cross-Site Scripting vulnerability...`);
       // Test XSS (First 2 payloads)
       for (const payload of this.XSS_PAYLOADS.slice(0, 2)) {
         await this.testPayload(new URL(target.url), target.param, payload, "xss");

@@ -285,16 +285,6 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     // AI Response Flush / Heartbeat Logic:
     // If AI is "analyzing" or "testing" but thoughts are empty or stalled,
     // inject a heartbeat thought to keep UI updated and truthful
-    if (thoughts.length === 0 || (["analyzing", "mapping", "testing", "registering"].includes(currentStatus) && thoughts[thoughts.length-1]?.type !== "observation")) {
-       thoughts.push({
-         id: `heartbeat-${Date.now()}`,
-         timestamp: new Date().toISOString(),
-         type: "observation",
-         message: `[System] ShadowLogic engine is active in ${currentStatus} phase...`,
-         details: "Processing security probes and analyzing business logic state."
-       });
-    }
-
     if (after) {
       const afterIndex = thoughts.findIndex(t => t.id === after);
       if (afterIndex >= 0) {
