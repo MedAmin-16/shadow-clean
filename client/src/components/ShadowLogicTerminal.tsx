@@ -162,15 +162,15 @@ export function ShadowLogicTerminal({ thoughts, isActive, className, evidences =
                     <span className="text-base flex-shrink-0 animate-pulse">{style.icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={cn("font-semibold text-xs uppercase tracking-wide", style.color)}>
-                          [{thought.type}]
+                        <span className={cn("font-bold text-[10px] uppercase tracking-tighter px-1.5 py-0.5 rounded border", style.bgColor, style.color, "border-amber-500/30")}>
+                          {thought.type}
                         </span>
-                        <span className="text-amber-700 text-xs font-mono">
-                          {new Date(thought.timestamp).toLocaleTimeString()}
+                        <span className="text-amber-700/60 text-[10px] font-mono">
+                          {new Date(thought.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </span>
                       </div>
-                      <p className={cn("text-amber-50 break-words text-xs leading-relaxed", style.color)}>
-                        ▸ {thought.message}
+                      <p className={cn("text-amber-50 break-words text-xs leading-relaxed font-medium", style.color)}>
+                        <span className="opacity-50 mr-2">{">>>"}</span>{thought.message}
                       </p>
                       {thought.details && (
                         <pre className="mt-1.5 text-xs text-amber-900 bg-amber-950/40 border border-amber-800/30 rounded p-1.5 overflow-x-auto font-mono">
