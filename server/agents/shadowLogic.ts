@@ -1618,7 +1618,7 @@ Respond in this JSON format:
         
         this.addVulnerability({
           id: nanoid(),
-          type: "price_manipulation",
+          type: "parameter_tampering",
           severity: "critical",
           title: "Verified Price Manipulation Exploit",
           description: `The endpoint ${request.url} accepts price-related parameters that are susceptible to client-side manipulation. Forensic proof attached.`,
