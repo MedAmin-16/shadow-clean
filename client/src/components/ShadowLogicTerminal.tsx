@@ -159,11 +159,11 @@ export function ShadowLogicTerminal({ thoughts, isActive, className, evidences =
                       "border-amber-700/20 hover:border-amber-600/40"
                     )}
                   >
-                    <span className="text-base flex-shrink-0 animate-pulse">{style.icon}</span>
+                    <span className="text-base flex-shrink-0 animate-pulse">{thought.icon || style.icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className={cn("font-bold text-[10px] uppercase tracking-tighter px-1.5 py-0.5 rounded border", style.bgColor, style.color, "border-amber-500/30")}>
-                          {thought.type}
+                          {thought.agentLabel || thought.type}
                         </span>
                         <span className="text-amber-700/60 text-[10px] font-mono">
                           {new Date(thought.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
