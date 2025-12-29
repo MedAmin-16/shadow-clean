@@ -181,6 +181,18 @@ export class ShadowLogicAgent {
     if (this.onUpdate) {
       this.onUpdate(thought);
     }
+
+    // Persist thoughts to database to prevent loss on restart/stale memory
+    storage.getScan(this.scanId).then(scan => {
+      if (scan) {
+        const results = (scan.agentResults as any) || {};
+        const thoughts = results.thoughts || [];
+        thoughts.push(thought);
+        storage.updateScan(this.scanId, { 
+          agentResults: { ...results, thoughts } 
+        }).catch(err => console.error("[ShadowLogic] Failed to sync thought to DB:", err));
+      }
+    });
   }
   
   private async waitForConcurrencySlot(): Promise<void> {
@@ -546,6 +558,11 @@ export class ShadowLogicAgent {
     
     // STATE RESET: Force immediate transition from initializing to active
     this.scanResult.status = "mapping"; // Guarantee we're in mapping, not initializing
+    
+    // Update DB status immediately to reflect the phase change
+    storage.updateScan(this.scanId, { status: "mapping" }).catch(err => {
+      console.error(`[ShadowLogic:${this.scanId}] Failed to update DB status to mapping:`, err);
+    });
     
     this.addThought("observation", "[STATE RESET] Forcing scan status to ACTIVE - Beginning thorough application mapping");
     this.addThought("reasoning", "Starting business flow mapping - crawling the application to understand complete state machine...");

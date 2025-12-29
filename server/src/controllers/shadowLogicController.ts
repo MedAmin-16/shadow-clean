@@ -191,7 +191,6 @@ export async function getShadowLogicScanStatus(req: Request, res: Response) {
     let scan = activeShadowLogicScans.get(scanId);
 
     // If not in memory, try to fetch from database to ensure truth
-    let dbStatus: string | undefined;
     let result: any;
     
     if (!scan) {
@@ -202,12 +201,13 @@ export async function getShadowLogicScanStatus(req: Request, res: Response) {
           error: "Scan not found" 
         });
       }
-      dbStatus = dbScan.status;
+      
+      const agentResults = (dbScan.agentResults as any) || {};
       // Mock result object for the response if scan is completed or in DB
       result = {
         id: dbScan.id,
         status: dbScan.status,
-        statistics: dbScan.agentResults?.statistics || {
+        statistics: agentResults.statistics || {
           pagesVisited: 0,
           formsAnalyzed: 0,
           apiEndpointsDiscovered: 0,
@@ -215,8 +215,8 @@ export async function getShadowLogicScanStatus(req: Request, res: Response) {
           vulnerabilitiesFound: 0,
           timeElapsed: 0,
         },
-        vulnerabilities: dbScan.agentResults?.vulnerabilities || [],
-        businessFlows: dbScan.agentResults?.businessFlows || [],
+        vulnerabilities: agentResults.vulnerabilities || [],
+        businessFlows: agentResults.businessFlows || [],
       };
     } else {
       result = scan.agent.getResult();
@@ -258,7 +258,8 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
       // If scan is not in memory, it might be in database
       const dbScan = await storage.getScan(scanId);
       if (dbScan) {
-        thoughts = dbScan.agentResults?.thoughts || [];
+        const agentResults = (dbScan.agentResults as any) || {};
+        thoughts = agentResults.thoughts || [];
         currentStatus = dbScan.status;
       } else {
         return res.status(404).json({ 
