@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "playwright:install": "nix-shell -p playwright-driver --run 'playwright install chromium'"
+  }
+}

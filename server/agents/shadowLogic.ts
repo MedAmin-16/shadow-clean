@@ -157,35 +157,48 @@ export class ShadowLogicAgent {
     };
     this.scanResult.thoughts.push(thought);
     
-    const icon = type === "success" ? "✅" : type === "action" ? "⚡" : type === "discovery" ? "🔍" : type === "reasoning" ? "🧠" : type === "observation" ? "👁️" : type === "warning" ? "⚠️" : "❌";
+    const icon = type === "success" ? "✅" : type === "action" ? "⚡" : type === "discovery" ? "🔍" : type === "reasoning" ? "🧠" : type === "observation" ? "👁️" : type === "warning" ? "⚠️" : type === "error" ? "❌" : "💬";
     const agentLabel = type === "success" ? "VERIFIED" : type === "action" ? "ATTACKING" : "SHADOWLOGIC";
+
+    // Ensure message has icon for UI consistency if not already present
+    const formattedMessage = message.startsWith(icon) ? message : `${icon} ${message}`;
 
     emitTerminalLog?.(this.scanId, {
       id: nanoid(),
       timestamp: thought.timestamp,
       type: type === "success" ? "success" : type === "action" ? "action" : "ai_thought",
-      message: message,
+      message: formattedMessage,
       isAiLog: true,
       agentLabel: agentLabel,
       icon: icon
     });
     
-    console.log(`[ShadowLogic:${this.scanId}] ${icon} [${type.toUpperCase()}] ${message}`);
+    console.log(`[ShadowLogic:${this.scanId}] ${formattedMessage}`);
 
-    storage.getScan(this.scanId).then(async scan => {
+    // Immediate DB sync with improved reliability
+    this.syncToDatabase(thought);
+  }
+
+  private async syncToDatabase(thought: ShadowLogicThought): Promise<void> {
+    try {
+      const scan = await storage.getScan(this.scanId);
       if (scan) {
         const results = (scan.agentResults as any) || {};
         const thoughts = results.thoughts || [];
         thoughts.push(thought);
         
-        // Update statistics if available in result
-        const statistics = this.scanResult.statistics;
-        
         await storage.updateScan(this.scanId, { 
-          agentResults: { ...results, thoughts, statistics } 
-        }).catch(err => console.error("[ShadowLogic] Failed to sync thought to DB:", err));
+          agentResults: { 
+            ...results, 
+            thoughts, 
+            statistics: this.scanResult.statistics,
+            lastUpdate: new Date().toISOString()
+          } 
+        });
       }
-    });
+    } catch (err) {
+      console.error(`[ShadowLogic:${this.scanId}] DB Sync Error:`, err);
+    }
   }
   
   private async waitForConcurrencySlot(): Promise<void> {
@@ -242,8 +255,8 @@ export class ShadowLogicAgent {
       });
     } catch (err) {}
     
-    this.addThought("action", "Launching headless browser...");
-    this.addThought("reasoning", "[ShadowLogic] Initializing business logic audit engine...");
+    this.addThought("action", "⚡ [Action] Launching headless browser...");
+    this.addThought("reasoning", "🧠 [Reasoning] Initializing business logic audit engine...");
 
     if (this.isBlockedDomain(this.config.targetUrl)) {
       throw new Error("Target domain is blocked for security reasons");
@@ -252,15 +265,24 @@ export class ShadowLogicAgent {
     try {
       this.browser = await chromium.launch({
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
       });
 
       this.context = await this.browser.newContext({
         viewport: { width: 1920, height: 1080 },
         ignoreHTTPSErrors: true,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 ShadowTwin/1.0',
       });
 
       this.page = await this.context.newPage();
+      
+      // Early interaction to show activity within 5 seconds
+      setTimeout(() => {
+        if (this.scanResult.status === "initializing") {
+          this.addThought("observation", "👁️ [Observation] Browser context ready. Preparing network interceptors...");
+        }
+      }, 2000);
 
       this.page.on("request", (request) => {
         const url = request.url();
@@ -275,9 +297,15 @@ export class ShadowLogicAgent {
         }
       });
 
-      this.addThought("success", "Browser initialized successfully");
+      this.addThought("success", "✅ [Success] Browser initialized successfully");
     } catch (error) {
-      this.addThought("error", `Failed to initialize browser: ${error}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.addThought("error", `❌ [Error] Browser launch failed: ${errorMsg}`);
+      
+      // Provide actionable hint if it looks like a missing dependency
+      if (errorMsg.includes("executable") || errorMsg.includes("shared library")) {
+        this.addThought("warning", "⚠️ [System] Browser executable missing. Attempting to use system-wide Chromium...");
+      }
       throw error;
     }
   }
