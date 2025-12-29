@@ -1200,12 +1200,10 @@ JSON format:
             affectedFlow: "User Input Handling",
             affectedEndpoint: baseUrl.toString(),
             evidence: {
-              payload,
-              reflected: true,
-              url: testUrl.toString(),
               originalRequest: `GET ${testUrl.toString()}`,
               exploitedResponse: evidenceSnippet,
             },
+            verifiedExploit: true,
             impact: "Attackers can execute JavaScript in victim's browser, steal cookies, session tokens, or perform actions as victim.",
             remediation: "Encode all output, implement Content-Security-Policy, use HTTPOnly cookies.",
             cweId: "CWE-79",
@@ -1235,11 +1233,10 @@ JSON format:
             affectedFlow: "File Access",
             affectedEndpoint: baseUrl.toString(),
             evidence: {
-              payload,
-              url: testUrl.toString(),
               originalRequest: `GET ${testUrl.toString()}`,
               exploitedResponse: lfiSignature,
             },
+            verifiedExploit: true,
             impact: "Attackers can read sensitive files from the server including configuration files, source code, and credentials.",
             remediation: "Validate and sanitize file paths. Use a whitelist of allowed files. Never pass user input directly to file operations.",
             cweId: "CWE-22",
@@ -1347,11 +1344,9 @@ JSON format:
                       affectedFlow: "Form Processing",
                       affectedEndpoint: action,
                       evidence: {
-                        payload,
-                        attackType: attackSet.name,
-                        formInputs: inputData.map(i => i.name),
                         exploitedResponse: dbErrorSig,
                       },
+                      verifiedExploit: true,
                       impact: "Full database compromise possible through form submission.",
                       remediation: "Use parameterized queries for all form data processing.",
                       cweId: "CWE-89",
@@ -1379,10 +1374,9 @@ JSON format:
                         affectedFlow: "Form Processing",
                         affectedEndpoint: action,
                         evidence: {
-                          payload,
-                          reflected: true,
                           exploitedResponse: `Payload reflected in response: ${payload.substring(0, 50)}`,
                         },
+                        verifiedExploit: true,
                         impact: "Stored or reflected XSS enables session hijacking and phishing.",
                         remediation: "Encode all output, implement CSP.",
                         cweId: "CWE-79",
@@ -1411,9 +1405,9 @@ JSON format:
                         affectedFlow: "Form Processing",
                         affectedEndpoint: action,
                         evidence: {
-                          payload,
                           exploitedResponse: lfiSig,
                         },
+                        verifiedExploit: true,
                         impact: "Attackers can read sensitive files including configuration and source code.",
                         remediation: "Validate and sanitize file paths on the server.",
                         cweId: "CWE-22",
@@ -1985,6 +1979,7 @@ Respond in this JSON format:
             originalRequest: `GET ${url}`,
             exploitedResponse: `Successfully accessed data with altered ID: ${alteredId}`,
           },
+          verifiedExploit: true,
           impact: "Attackers can read, modify, or delete other users' sensitive data (accounts, orders, personal information).",
           remediation: "Use UUID v4 for all resource identifiers. Implement authorization checks before returning user-specific data.",
           cweId: "CWE-639",
@@ -2024,6 +2019,7 @@ Respond in this JSON format:
           evidence: {
             exploitedResponse: `Multiple concurrent requests processed successfully (should be prevented)`,
           },
+          verifiedExploit: true,
           impact: "Attackers can redeem codes multiple times, execute double-spending attacks, or claim rewards repeatedly.",
           remediation: "Implement atomic database transactions, use pessimistic locking, or implement idempotency tokens.",
           cweId: "CWE-362",
@@ -2065,6 +2061,7 @@ Respond in this JSON format:
             originalRequest: `${request.method} ${request.url}`,
             exploitedResponse: `User data returned when ID modified`,
           },
+          verifiedExploit: true,
           impact: "Attackers could access other users' data by modifying ID parameters.",
           remediation: "Implement authorization checks and use indirect references or UUIDs.",
           cweId: "CWE-639",
@@ -2101,6 +2098,7 @@ Respond in this JSON format:
           evidence: {
             exploitedResponse: `Success page accessible without payment`,
           },
+          verifiedExploit: true,
           impact: "Users could skip payment or verification steps by accessing endpoints directly.",
           remediation: "Implement server-side workflow state validation. Use tokens to verify step completion.",
           cweId: "CWE-841",
@@ -2139,6 +2137,7 @@ Respond in this JSON format:
             originalRequest: request.body,
             exploitedResponse: `Hidden parameter accepted and processed`,
           },
+          verifiedExploit: true,
           impact: "Attackers could modify hidden parameters to gain unauthorized access or discounts.",
           remediation: "Never trust client-side parameters for authorization or pricing decisions.",
           cweId: "CWE-472",
@@ -2162,8 +2161,8 @@ Respond in this JSON format:
     this.addThought("discovery", `VULNERABILITY FOUND: ${vuln.title} (${vuln.severity.toUpperCase()})`);
     
     // Build proof-of-concept details
-    const payloadStr = metadata?.payload || (vuln.evidence?.payload as string) || "N/A";
-    const exploitUrl = metadata?.exploitUrl || (vuln.evidence?.url as string) || vuln.affectedEndpoint;
+    const payloadStr = metadata?.payload || "N/A";
+    const exploitUrl = metadata?.exploitUrl || vuln.affectedEndpoint;
     const serverResponse = metadata?.serverResponse || metadata?.responseSnippet || (vuln.evidence?.exploitedResponse as string) || "See database for evidence";
     const reproductionSteps = metadata?.reproductionSteps || `curl "${exploitUrl}"`;
     
@@ -2230,10 +2229,9 @@ Respond in this JSON format:
       const { shadowlogicScansTable, shadowlogicVulnerabilitiesTable, shadowlogicDiscoveriesTable } = await import("@shared/schema");
       
       // Insert the scan record
-      await db.insert(shadowlogicScansTable).values({
-        id: this.scanResult.id,
-        userId: this.userId,
+      await (db as any).insert(shadowlogicScansTable).values({
         scanId: this.scanId,
+        userId: this.userId,
         target: this.config.targetUrl,
         status: this.scanResult.status,
         findingCount: this.scanResult.vulnerabilities.length,
@@ -2258,7 +2256,6 @@ Respond in this JSON format:
           title: vuln.title,
           description: vuln.description,
           severity: vuln.severity,
-          confidence: vuln.confidence || 0,
           businessImpact: vuln.impact,
           proof: vuln.evidence ? JSON.stringify(vuln.evidence) : null,
           remediation: vuln.remediation,
@@ -2279,7 +2276,7 @@ Respond in this JSON format:
       }
 
       // Save discovered URLs and forms
-      for (const url of this.discoveredUrls) {
+      for (const url of Array.from(this.discoveredUrls)) {
         await db.insert(shadowlogicDiscoveriesTable).values({
           shadowlogicScanId: this.scanResult.id,
           discoveryType: "url",
