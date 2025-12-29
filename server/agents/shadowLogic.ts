@@ -164,18 +164,25 @@ export class ShadowLogicAgent {
     };
     this.scanResult.thoughts.push(thought);
     
-    // Log to terminal for debugging
-    console.log(`[ShadowLogic:${this.scanId}] THOUGHT: [${type}] ${message}`);
-
     // Stream thought to terminal
     emitTerminalLog?.(this.scanId, {
-      id: thought.id,
+      id: nanoid(),
       timestamp: thought.timestamp,
-      type: "ai_thought",
+      type: type === "success" ? "success" : "ai_thought",
       message: message,
       isAiLog: true,
       agentLabel: "ShadowLogic"
     });
+    
+    // Log to terminal for debugging
+    console.log(`[ShadowLogic:${this.scanId}] THOUGHT: [${type}] ${message}`);
+
+    // The 'Green Box' Feedback: Every successful sub-step MUST emit a thought with a success type
+    if (type === "success") {
+      console.log(`\x1b[32m✅ [Success] ${message}\x1b[0m`);
+    } else if (type === "action") {
+      console.log(`\x1b[34m▸ ${message}\x1b[0m`);
+    }
     
     // Emit for the thoughts API
     if (this.onUpdate) {
@@ -417,6 +424,9 @@ export class ShadowLogicAgent {
     // Ensure we trigger a thought immediately for the terminal
     this.addThought("reasoning", "[ShadowLogic] Initializing business logic audit engine...");
 
+    // Remove the Generic Silence: Log real observation
+    this.addThought("observation", `Initializing scan for target: ${this.config.targetUrl}. Analyzing business logic entry points...`);
+
     if (this.isBlockedDomain(this.config.targetUrl)) {
       throw new Error("Target domain is blocked for security reasons");
     }
@@ -512,7 +522,7 @@ export class ShadowLogicAgent {
         const element = await this.page.$(selector);
         if (element) {
           await element.fill(this.config.testCredentials?.email || tempEmail);
-          this.addThought("action", `Filled email field: ${selector}`);
+          this.addThought("action", `Filling security fields: email (${selector})...`);
           break;
         }
       }
@@ -521,7 +531,7 @@ export class ShadowLogicAgent {
         const element = await this.page.$(selector);
         if (element) {
           await element.fill(this.config.testCredentials?.username || tempUsername);
-          this.addThought("action", `Filled username field: ${selector}`);
+          this.addThought("action", `Filling security fields: username (${selector})...`);
           break;
         }
       }
@@ -546,7 +556,7 @@ export class ShadowLogicAgent {
       }
 
       await this.page.waitForLoadState("networkidle");
-      this.addThought("success", "Registration attempt completed");
+      this.addThought("success", "Self-registration completed");
       return true;
     } catch (error) {
       this.addThought("warning", `Registration failed: ${error}`);

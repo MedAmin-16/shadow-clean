@@ -125,6 +125,8 @@ export async function startShadowLogicScan(req: Request, res: Response) {
 
     activeShadowLogicScans.set(scanId, { agent, thoughts });
 
+    console.log("[Manager] SPAWNING AGENT NOW", { scanId, userId });
+
     res.json({
       success: true,
       scanId,
