@@ -1,14 +1,13 @@
-# Secrets
-.env
-.replit
-.config/
+# Local / Replit
+.local/
+.local/**
 
-# Binaries & tools
-bin/
-tools/
+# pnpm
+.pnpm-store/
 
-# Node
-node_modules/
+# sqlmap outputs
+sqlmap/
+**/sqlmap/output/
 
-# Logs
-*.log
+# binaries / state
+*.bin
