@@ -1592,68 +1592,6 @@ Respond in this JSON format:
     }
   }
 
-  async runSecurityTests(): Promise<void> {
-    if (!this.page) return;
-
-    this.updatePhase("testing");
-    this.addThought("action", "[AGGRESSIVE MODE] Starting comprehensive security tests...");
-    emitToScan?.(this.scanId, "shadowLogic:system", {
-      message: "[PHASE] AGGRESSIVE Security Testing - Injecting payloads, fuzzing forms, AI-powered attacks..."
-    });
-
-    // Run aggressive tests FIRST
-    await this.aggressiveParameterInjection();
-    await this.aggressiveFormFuzzing();
-    await this.groqPoweredAttackGeneration();
-
-    // Then run standard business logic tests
-    for (const testType of this.config.testTypes) {
-      this.addThought("reasoning", `Executing ${testType} tests...`);
-      
-      switch (testType) {
-        case "price_manipulation":
-          await this.testPriceManipulation();
-          break;
-        case "quantity_manipulation":
-          await this.testQuantityManipulation();
-          break;
-        case "privilege_escalation":
-          await this.testPrivilegeEscalation();
-          break;
-        case "idor":
-          await this.testIDOR();
-          break;
-        case "workflow_bypass":
-          await this.testWorkflowBypass();
-          break;
-        case "parameter_tampering":
-          await this.testParameterTampering();
-          break;
-        case "race_condition":
-          await this.testRaceConditions();
-          break;
-      }
-
-      this.scanResult.statistics.testsExecuted++;
-    }
-    
-    await this.testStateMachineAuditing();
-    await this.testAdvancedParameterTampering();
-    await this.testContextAwareIDOR();
-    await this.testPrivilegeEscalationAdvanced();
-    
-    this.addThought("success", `[RUTHLESS AUDIT COMPLETE] Found ${this.scanResult.vulnerabilities.length} business logic flaws. Shadow Logic missed nothing.`);
-  }
-
-  private async testPriceManipulation(): Promise<void> {
-    this.addThought("action", "[FORENSIC MODE] Testing for price manipulation with detailed PoC generation...");
-
-    const pricePatterns = [
-      /price/i, /amount/i, /total/i, /cost/i, /value/i
-    ];
-
-    const requests = Array.from(this.networkRequests.entries());
-    for (const [key, request] of requests) {
       if (request.body && pricePatterns.some(p => p.test(request.body!))) {
         this.addThought("reasoning", `[Shadow Logic] Generating detailed PoC for price manipulation at: ${request.url}`);
         
