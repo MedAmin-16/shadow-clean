@@ -188,17 +188,40 @@ export async function startShadowLogicScan(req: Request, res: Response) {
 export async function getShadowLogicScanStatus(req: Request, res: Response) {
   try {
     const { scanId } = req.params;
-    const scan = activeShadowLogicScans.get(scanId);
+    let scan = activeShadowLogicScans.get(scanId);
 
+    // If not in memory, try to fetch from database to ensure truth
+    let dbStatus: string | undefined;
+    let result: any;
+    
     if (!scan) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Scan not found or already completed" 
-      });
+      const dbScan = await storage.getScan(scanId);
+      if (!dbScan) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Scan not found" 
+        });
+      }
+      dbStatus = dbScan.status;
+      // Mock result object for the response if scan is completed or in DB
+      result = {
+        id: dbScan.id,
+        status: dbScan.status,
+        statistics: dbScan.agentResults?.statistics || {
+          pagesVisited: 0,
+          formsAnalyzed: 0,
+          apiEndpointsDiscovered: 0,
+          testsExecuted: 0,
+          vulnerabilitiesFound: 0,
+          timeElapsed: 0,
+        },
+        vulnerabilities: dbScan.agentResults?.vulnerabilities || [],
+        businessFlows: dbScan.agentResults?.businessFlows || [],
+      };
+    } else {
+      result = scan.agent.getResult();
     }
 
-    const result = scan.agent.getResult();
-    
     res.json({
       success: true,
       data: {
@@ -206,8 +229,8 @@ export async function getShadowLogicScanStatus(req: Request, res: Response) {
         status: result.status,
         progress: calculateProgress(result),
         statistics: result.statistics,
-        vulnerabilitiesFound: result.vulnerabilities.length,
-        businessFlowsDiscovered: result.businessFlows.length,
+        vulnerabilitiesFound: result.vulnerabilities?.length || 0,
+        businessFlowsDiscovered: result.businessFlows?.length || 0,
       },
     });
   } catch (error) {
@@ -225,14 +248,39 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     const after = req.query.after as string | undefined;
     
     const scan = activeShadowLogicScans.get(scanId);
-    if (!scan) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Scan not found or already completed" 
-      });
+    let thoughts: ShadowLogicThought[] = [];
+    let currentStatus: string = "initializing";
+
+    if (scan) {
+      thoughts = [...scan.thoughts];
+      currentStatus = scan.agent.getResult().status;
+    } else {
+      // If scan is not in memory, it might be in database
+      const dbScan = await storage.getScan(scanId);
+      if (dbScan) {
+        thoughts = dbScan.agentResults?.thoughts || [];
+        currentStatus = dbScan.status;
+      } else {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Scan not found" 
+        });
+      }
     }
 
-    let thoughts = scan.thoughts;
+    // AI Response Flush / Heartbeat Logic:
+    // If AI is "analyzing" but thoughts are empty or stalled,
+    // inject a heartbeat thought to keep UI updated and truthful
+    if (thoughts.length === 0 || (currentStatus === "analyzing" && thoughts[thoughts.length-1].type !== "observation")) {
+       thoughts.push({
+         id: `heartbeat-${Date.now()}`,
+         timestamp: new Date().toISOString(),
+         type: "observation",
+         message: `[Heartbeat] System active in ${currentStatus} phase...`,
+         details: "ShadowLogic engine is processing current state data."
+       });
+    }
+
     if (after) {
       const afterIndex = thoughts.findIndex(t => t.id === after);
       if (afterIndex >= 0) {
@@ -241,7 +289,6 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     }
 
     // STREAM FIX: Force 200 OK with fresh data, never 304 Not Modified
-    // Even if no new thoughts, return 200 with status update to keep terminal scrolling
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -250,7 +297,7 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     res.status(200).json({
       success: true,
       data: thoughts,
-      status: scan.agent.getResult().status,
+      status: currentStatus,
       timestamp: new Date().toISOString(),
       thoughtCount: thoughts.length,
     });

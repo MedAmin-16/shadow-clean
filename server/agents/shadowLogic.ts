@@ -164,6 +164,9 @@ export class ShadowLogicAgent {
     };
     this.scanResult.thoughts.push(thought);
     
+    // Log to terminal for debugging
+    console.log(`[ShadowLogic:${this.scanId}] THOUGHT: [${type}] ${message}`);
+
     // Stream thought to terminal
     emitTerminalLog?.(this.scanId, {
       id: thought.id,
@@ -353,7 +356,12 @@ export class ShadowLogicAgent {
   private updatePhase(phase: ShadowLogicPhase): void {
     this.scanResult.status = phase;
     this.addThought("observation", `Phase changed to: ${phase}`);
-    
+
+    // Update the database immediately to prevent state desync
+    storage.updateScan(this.scanId, { status: phase }).catch(err => {
+      console.error(`[ShadowLogic:${this.scanId}] Failed to update DB status:`, err);
+    });
+
     // Emit socket event for phase update with color coding
     if (phase === "testing") {
       emitPhaseUpdate?.(this.scanId, "Testing");
