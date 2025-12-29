@@ -129,7 +129,7 @@ export async function startShadowLogicScan(req: Request, res: Response) {
       status: "initializing",
       scanType: "shadow_logic",
       agentResults: { thoughts: [] }
-    });
+    } as any);
 
     const agent = new ShadowLogicAgent(config, userId, scanId, (thought) => {
       thoughts.push(thought);
