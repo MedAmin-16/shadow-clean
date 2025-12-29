@@ -300,22 +300,43 @@ export class ShadowLogicAgent {
     this.updatePhase("mapping");
     this.addThought("observation", "▸ [Shadow Logic] Starting application mapping...");
     
+    let lastDiscoveryTime = Date.now();
+    let mappingComplete = false;
+
+    const checkAdaptiveJump = setInterval(() => {
+      const silenceTime = Date.now() - lastDiscoveryTime;
+      if (!mappingComplete && silenceTime > 30000 && this.discoveredUrls.size >= 4) {
+        clearInterval(checkAdaptiveJump);
+        mappingComplete = true;
+        this.addThought("success", `✅ [Success] Mapping complete. Discovered ${this.discoveredUrls.size} URLs.`);
+        this.updatePhase("testing");
+      }
+    }, 5000);
+
     try {
+      this.addThought("action", `▸ [Action] Navigating to target: ${this.config.targetUrl}`);
       await this.page.goto(this.config.targetUrl, { timeout: 15000, waitUntil: "domcontentloaded" });
       this.discoveredUrls.add(this.config.targetUrl);
       this.visitedUrls.add(this.config.targetUrl);
       this.scanResult.statistics.pagesVisited++;
+      lastDiscoveryTime = Date.now();
 
-      await this.crawlPage(this.config.targetUrl, 0);
+      await this.crawlPage(this.config.targetUrl, 0, () => {
+        lastDiscoveryTime = Date.now();
+      });
       
-      this.addThought("success", `✅ [Success] Mapping complete. Discovered ${this.discoveredUrls.size} URLs.`);
-      this.updatePhase("testing");
+      if (!mappingComplete) {
+        clearInterval(checkAdaptiveJump);
+        this.addThought("success", `✅ [Success] Mapping complete. Discovered ${this.discoveredUrls.size} URLs.`);
+        this.updatePhase("testing");
+      }
     } catch (error) {
+      clearInterval(checkAdaptiveJump);
       this.addThought("error", `Mapping failed: ${error}`);
     }
   }
 
-  private async crawlPage(url: string, depth: number): Promise<void> {
+  private async crawlPage(url: string, depth: number, onDiscovery?: () => void): Promise<void> {
     if (!this.page || depth >= (this.config.maxDepth || 2)) return;
 
     try {
@@ -336,14 +357,17 @@ export class ShadowLogicAgent {
         
         this.discoveredUrls.add(link);
         this.visitedUrls.add(link);
+        onDiscovery?.();
         
         await this.waitForConcurrencySlot();
         await this.enforceRequestDelay();
         
         try {
+          this.addThought("action", `▸ [Action] Navigating to: ${link}`);
           await this.page.goto(link, { timeout: 10000, waitUntil: "domcontentloaded" });
+          this.addThought("success", `✅ [Success] Loaded ${link}`);
           this.scanResult.statistics.pagesVisited++;
-          await this.crawlPage(link, depth + 1);
+          await this.crawlPage(link, depth + 1, onDiscovery);
         } catch (e) {
           console.warn(`Skipping URL: ${link}`);
         } finally {
@@ -384,9 +408,11 @@ export class ShadowLogicAgent {
 
     for (const target of targets.slice(0, 10)) {
       for (const payload of this.SQLI_PAYLOADS.slice(0, 2)) {
+        this.addThought("action", `⚡ [SQLi Test] Testing ${target.url} with payload on param '${target.param}'`);
         await this.testPayload(new URL(target.url), target.param, payload, "sqli");
       }
       for (const payload of this.XSS_PAYLOADS.slice(0, 2)) {
+        this.addThought("action", `⚡ [XSS Test] Testing ${target.url} with payload on param '${target.param}'`);
         await this.testPayload(new URL(target.url), target.param, payload, "xss");
       }
     }
