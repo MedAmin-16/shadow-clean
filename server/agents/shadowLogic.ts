@@ -370,7 +370,11 @@ export class ShadowLogicAgent {
     this.addThought("observation", `Phase changed to: ${phase}`);
 
     // Update the database immediately to prevent state desync
-    storage.updateScan(this.scanId, { status: phase }).catch(err => {
+    // We use storage.updateScan which handles the DB persistence
+    storage.updateScan(this.scanId, { 
+      status: phase,
+      currentAgent: "shadow_logic"
+    }).catch(err => {
       console.error(`[ShadowLogic:${this.scanId}] Failed to update DB status:`, err);
     });
 

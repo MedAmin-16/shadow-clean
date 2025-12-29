@@ -251,34 +251,47 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     let thoughts: ShadowLogicThought[] = [];
     let currentStatus: string = "initializing";
 
+    // ALWAYS query the database first for the definitive status
+    const dbScan = await storage.getScan(scanId);
+    if (dbScan) {
+      currentStatus = dbScan.status;
+      const agentResults = (dbScan.agentResults as any) || {};
+      thoughts = agentResults.thoughts || [];
+      console.log(`[ShadowLogic API] DB Status for ${scanId}: ${currentStatus}, Thoughts: ${thoughts.length}`);
+    }
+
+    // If the agent is in memory, it might have fresher thoughts than the last DB sync
     if (scan) {
-      thoughts = [...scan.thoughts];
-      currentStatus = scan.agent.getResult().status;
-    } else {
-      // If scan is not in memory, it might be in database
-      const dbScan = await storage.getScan(scanId);
-      if (dbScan) {
-        const agentResults = (dbScan.agentResults as any) || {};
-        thoughts = agentResults.thoughts || [];
-        currentStatus = dbScan.status;
-      } else {
-        return res.status(404).json({ 
-          success: false, 
-          error: "Scan not found" 
-        });
+      const liveResult = scan.agent.getResult();
+      // Only override if live status is further along or different from DB
+      if (liveResult.status !== "initializing") {
+        currentStatus = liveResult.status;
       }
+      
+      // Merge live thoughts if they are newer/more than DB thoughts
+      if (liveResult.thoughts.length > thoughts.length) {
+        thoughts = [...liveResult.thoughts];
+      }
+      console.log(`[ShadowLogic API] Live Status for ${scanId}: ${currentStatus}, Thoughts: ${thoughts.length}`);
+    }
+
+    if (!dbScan && !scan) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Scan not found" 
+      });
     }
 
     // AI Response Flush / Heartbeat Logic:
-    // If AI is "analyzing" but thoughts are empty or stalled,
+    // If AI is "analyzing" or "testing" but thoughts are empty or stalled,
     // inject a heartbeat thought to keep UI updated and truthful
-    if (thoughts.length === 0 || (currentStatus === "analyzing" && thoughts[thoughts.length-1].type !== "observation")) {
+    if (thoughts.length === 0 || (["analyzing", "mapping", "testing", "registering"].includes(currentStatus) && thoughts[thoughts.length-1]?.type !== "observation")) {
        thoughts.push({
          id: `heartbeat-${Date.now()}`,
          timestamp: new Date().toISOString(),
          type: "observation",
-         message: `[Heartbeat] System active in ${currentStatus} phase...`,
-         details: "ShadowLogic engine is processing current state data."
+         message: `[System] ShadowLogic engine is active in ${currentStatus} phase...`,
+         details: "Processing security probes and analyzing business logic state."
        });
     }
 
@@ -293,7 +306,6 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.setHeader("ETag", "");
     
     res.status(200).json({
       success: true,
