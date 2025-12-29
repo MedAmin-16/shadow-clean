@@ -287,6 +287,8 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
         thoughts = [...liveResult.thoughts];
       }
       console.log(`[ShadowLogic API] Live Status for ${scanId}: ${currentStatus}, Thoughts: ${thoughts.length}`);
+    }
+
     // If NOT in memory AND NOT in DB, return 404
     if (!dbScan && !scan) {
       return res.status(404).json({ 
