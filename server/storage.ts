@@ -265,26 +265,52 @@ export class MemStorage implements IStorage {
     return creditService.setUserPlanLevel(userId, planLevel);
   }
 
-  async createScan(insertScan: InsertScan): Promise<Scan> {
+  async createScan(insertScan: InsertScan & { id?: string }): Promise<Scan> {
     if (!insertScan.userId) {
       throw new Error("User ID is required to create a scan");
     }
-    const id = randomUUID();
-    const scan: Scan = {
-      id,
-      target: insertScan.target,
-      userId: insertScan.userId,
-      status: "pending",
-      currentAgent: null,
-      progress: 0,
-      startedAt: new Date(),
-      completedAt: null,
-      error: null,
-      scanType: "standard",
-      agentResults: {},
-    };
-    this.scans.set(id, scan);
-    return scan;
+    const id = insertScan.id || randomUUID();
+    
+    // First, persist to PostgreSQL if available
+    try {
+      const [dbScan] = await db.insert(scansTable).values({
+        id,
+        target: insertScan.target,
+        userId: insertScan.userId,
+        status: insertScan.status || "pending",
+        scanType: (insertScan.scanType as any) || "standard",
+        agentResults: insertScan.agentResults || {},
+        startedAt: new Date(),
+      }).returning();
+      
+      // Also update in-memory cache
+      const scan: Scan = {
+        ...dbScan,
+        currentAgent: dbScan.currentAgent || null,
+        progress: dbScan.progress || 0,
+        error: dbScan.error || null,
+      };
+      this.scans.set(id, scan);
+      return scan;
+    } catch (error) {
+      console.error("[Storage] Failed to create scan in DB, falling back to memory:", error);
+      // Fallback to in-memory only if DB fails
+      const scan: Scan = {
+        id,
+        target: insertScan.target,
+        userId: insertScan.userId,
+        status: insertScan.status || "pending",
+        currentAgent: null,
+        progress: 0,
+        startedAt: new Date(),
+        completedAt: null,
+        error: null,
+        scanType: (insertScan.scanType as any) || "standard",
+        agentResults: insertScan.agentResults || {},
+      };
+      this.scans.set(id, scan);
+      return scan;
+    }
   }
 
   async getScan(id: string): Promise<Scan | undefined> {
@@ -299,10 +325,30 @@ export class MemStorage implements IStorage {
 
   async updateScan(id: string, updates: Partial<Scan>): Promise<Scan | undefined> {
     const scan = this.scans.get(id);
-    if (!scan) return undefined;
-    
-    const updatedScan: Scan = { ...scan, ...updates };
+    const updatedScan: Scan = scan ? { ...scan, ...updates } : { id, ...updates } as Scan;
     this.scans.set(id, updatedScan);
+
+    // Persist to PostgreSQL
+    try {
+      const [updated] = await db.update(scansTable)
+        .set(updates)
+        .where(eq(scansTable.id, id))
+        .returning();
+      
+      if (updated) {
+        const fullScan: Scan = {
+          ...updated,
+          currentAgent: updated.currentAgent || null,
+          progress: updated.progress || 0,
+          error: updated.error || null,
+        };
+        this.scans.set(id, fullScan);
+        return fullScan;
+      }
+    } catch (error) {
+      console.error(`[Storage] Failed to update scan ${id} in DB:`, error);
+    }
+    
     return updatedScan;
   }
 

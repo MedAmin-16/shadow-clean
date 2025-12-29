@@ -172,13 +172,17 @@ export class ShadowLogicAgent {
     
     console.log(`[ShadowLogic:${this.scanId}] ${icon} [${type.toUpperCase()}] ${message}`);
 
-    storage.getScan(this.scanId).then(scan => {
+    storage.getScan(this.scanId).then(async scan => {
       if (scan) {
         const results = (scan.agentResults as any) || {};
         const thoughts = results.thoughts || [];
         thoughts.push(thought);
-        storage.updateScan(this.scanId, { 
-          agentResults: { ...results, thoughts } 
+        
+        // Update statistics if available in result
+        const statistics = this.scanResult.statistics;
+        
+        await storage.updateScan(this.scanId, { 
+          agentResults: { ...results, thoughts, statistics } 
         }).catch(err => console.error("[ShadowLogic] Failed to sync thought to DB:", err));
       }
     });

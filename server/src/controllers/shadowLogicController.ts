@@ -53,6 +53,7 @@ const shadowLogicScanRequestSchema = z.object({
   excludeUrls: z.array(z.string()).optional(),
   safetyMode: z.boolean().optional(),
   headless: z.boolean().optional(),
+  scanId: z.string().optional(),
 });
 
 export async function startShadowLogicScan(req: Request, res: Response) {
@@ -117,8 +118,19 @@ export async function startShadowLogicScan(req: Request, res: Response) {
       headless: validatedData.headless ?? DEFAULT_SHADOW_LOGIC_CONFIG.headless!,
     };
 
-    const scanId = nanoid();
+    const scanId = validatedData.scanId || nanoid();
     const thoughts: ShadowLogicThought[] = [];
+    
+    // 1. Create scan record in database immediately for persistence
+    await storage.createScan({
+      id: scanId,
+      userId,
+      target: validatedData.targetUrl,
+      status: "initializing",
+      scanType: "shadow_logic",
+      agentResults: { thoughts: [] }
+    });
+
     const agent = new ShadowLogicAgent(config, userId, scanId, (thought) => {
       thoughts.push(thought);
     });
@@ -275,8 +287,7 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
         thoughts = [...liveResult.thoughts];
       }
       console.log(`[ShadowLogic API] Live Status for ${scanId}: ${currentStatus}, Thoughts: ${thoughts.length}`);
-    }
-
+    // If NOT in memory AND NOT in DB, return 404
     if (!dbScan && !scan) {
       return res.status(404).json({ 
         success: false, 
@@ -287,11 +298,13 @@ export async function getShadowLogicThoughts(req: Request, res: Response) {
     // AI Response Flush / Heartbeat Logic:
     // If AI is "analyzing" or "testing" but thoughts are empty or stalled,
     // inject a heartbeat thought to keep UI updated and truthful
-    if (after) {
-      const afterIndex = thoughts.findIndex(t => t.id === after);
-      if (afterIndex >= 0) {
-        thoughts = thoughts.slice(afterIndex + 1);
-      }
+    if (thoughts.length === 0 && (currentStatus === "mapping" || currentStatus === "testing")) {
+       thoughts.push({
+         id: nanoid(),
+         timestamp: new Date().toISOString(),
+         type: "observation",
+         message: `[Shadow Twin] Agent is active and ${currentStatus} the target...`
+       });
     }
 
     // STREAM FIX: Force 200 OK with fresh data, never 304 Not Modified
